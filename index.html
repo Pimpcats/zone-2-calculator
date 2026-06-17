@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Heart Rate Zone Calculator — % of Max HR Method</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Heart Rate Zones — Calculator + Live Tracker</title>
 <style>
   :root {
     --bg: #0f1419;
@@ -13,8 +13,9 @@
     --muted: #9aa7b4;
     --accent: #ff5a5f;
     --border: #2c3742;
+    --ok: #43aa8b;
   }
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   body {
     margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -23,123 +24,152 @@
     min-height: 100vh;
     display: flex;
     justify-content: center;
-    padding: 32px 16px 64px;
+    padding: 24px 16px calc(64px + env(safe-area-inset-bottom));
   }
   .wrap { width: 100%; max-width: 720px; }
-  header h1 {
-    font-size: 1.7rem;
-    margin: 0 0 4px;
-    letter-spacing: -0.02em;
+  header h1 { font-size: 1.5rem; margin: 0 0 4px; letter-spacing: -0.02em; }
+  header p { color: var(--muted); margin: 0 0 18px; font-size: 0.92rem; line-height: 1.5; }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 6px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 6px;
+    margin-bottom: 22px;
   }
-  header p {
+  .tab {
+    flex: 1;
+    text-align: center;
+    padding: 12px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
     color: var(--muted);
-    margin: 0 0 24px;
-    font-size: 0.95rem;
-    line-height: 1.5;
+    background: transparent;
+    border: none;
+    font-size: 0.98rem;
+    transition: background 0.15s, color 0.15s;
   }
+  .tab.active { background: var(--accent); color: #fff; }
+  .panel-view { display: none; }
+  .panel-view.active { display: block; }
+
   .panel {
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: 16px;
-    padding: 24px;
-    margin-bottom: 24px;
+    padding: 22px;
+    margin-bottom: 22px;
     box-shadow: 0 8px 30px rgba(0,0,0,0.25);
   }
-  .controls {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
-  }
+  .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
   @media (max-width: 520px) { .controls { grid-template-columns: 1fr; } }
   label {
-    display: block;
-    font-size: 0.8rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--muted);
-    margin-bottom: 8px;
+    display: block; font-size: 0.78rem; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--muted); margin-bottom: 8px;
   }
   .field-row { display: flex; align-items: center; gap: 12px; }
   input[type="number"] {
-    width: 100%;
-    background: var(--card-2);
-    border: 1px solid var(--border);
-    color: var(--text);
-    font-size: 1.4rem;
-    font-weight: 600;
-    padding: 12px 14px;
-    border-radius: 10px;
-    outline: none;
-    transition: border-color 0.15s;
+    width: 100%; background: var(--card-2); border: 1px solid var(--border);
+    color: var(--text); font-size: 1.4rem; font-weight: 600;
+    padding: 12px 14px; border-radius: 10px; outline: none; transition: border-color 0.15s;
   }
   input[type="number"]:focus { border-color: var(--accent); }
-  input[type="range"] {
-    width: 100%;
-    margin-top: 14px;
-    accent-color: var(--accent);
-  }
-  .mhr-readout {
-    text-align: center;
-    margin: 4px 0 24px;
-  }
-  .mhr-readout .big {
-    font-size: 3rem;
-    font-weight: 800;
-    color: var(--accent);
-    line-height: 1;
-  }
-  .mhr-readout .label {
-    color: var(--muted);
-    font-size: 0.9rem;
-    margin-top: 6px;
-  }
-  .mhr-readout .formula {
-    color: var(--muted);
-    font-size: 0.85rem;
-    margin-top: 4px;
-    font-variant-numeric: tabular-nums;
-  }
-  .zones { display: flex; flex-direction: column; gap: 12px; }
+  input[type="range"] { width: 100%; margin-top: 14px; accent-color: var(--accent); }
+
+  .mhr-readout { text-align: center; margin: 4px 0 22px; }
+  .mhr-readout .big { font-size: 2.6rem; font-weight: 800; color: var(--accent); line-height: 1; }
+  .mhr-readout .label { color: var(--muted); font-size: 0.9rem; margin-top: 6px; }
+  .mhr-readout .formula { color: var(--muted); font-size: 0.85rem; margin-top: 4px; font-variant-numeric: tabular-nums; }
+
+  .zones { display: flex; flex-direction: column; gap: 10px; }
   .zone {
-    display: grid;
-    grid-template-columns: 64px 1fr auto;
-    align-items: center;
-    gap: 16px;
-    background: var(--card-2);
-    border: 1px solid var(--border);
-    border-left: 5px solid var(--zc);
-    border-radius: 12px;
-    padding: 14px 18px;
+    display: grid; grid-template-columns: 60px 1fr auto; align-items: center; gap: 14px;
+    background: var(--card-2); border: 1px solid var(--border);
+    border-left: 5px solid var(--zc); border-radius: 12px; padding: 12px 16px;
+    transition: transform 0.1s, box-shadow 0.15s;
   }
-  .zone .num {
-    font-size: 1.6rem;
-    font-weight: 800;
-    color: var(--zc);
+  .zone.current { box-shadow: 0 0 0 2px var(--zc); transform: scale(1.01); }
+  .zone .num { font-size: 1.5rem; font-weight: 800; color: var(--zc); }
+  .zone .meta .name { font-weight: 600; font-size: 0.98rem; }
+  .zone .meta .pct { color: var(--muted); font-size: 0.8rem; margin-top: 2px; }
+  .zone .bpm { text-align: right; font-variant-numeric: tabular-nums; }
+  .zone .bpm .range { font-size: 1.3rem; font-weight: 700; white-space: nowrap; }
+  .zone .bpm .unit { color: var(--muted); font-size: 0.76rem; }
+
+  /* Tracker */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; padding: 16px; border-radius: 12px; border: none; cursor: pointer;
+    font-size: 1.05rem; font-weight: 700; background: var(--accent); color: #fff;
+    transition: opacity 0.15s, background 0.15s;
   }
-  .zone .meta .name { font-weight: 600; font-size: 1rem; }
-  .zone .meta .pct { color: var(--muted); font-size: 0.82rem; margin-top: 2px; }
-  .zone .bpm {
-    text-align: right;
-    font-variant-numeric: tabular-nums;
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn.secondary { background: var(--card-2); border: 1px solid var(--border); color: var(--text); }
+  .status { text-align: center; color: var(--muted); font-size: 0.88rem; margin: 14px 0 0; min-height: 1.2em; }
+  .status.err { color: var(--accent); }
+  .status.ok { color: var(--ok); }
+
+  .live {
+    text-align: center; border-radius: 18px; padding: 28px 18px; margin-bottom: 18px;
+    background: var(--card); border: 1px solid var(--border);
+    transition: background 0.25s, border-color 0.25s;
   }
-  .zone .bpm .range { font-size: 1.35rem; font-weight: 700; white-space: nowrap; }
-  .zone .bpm .unit { color: var(--muted); font-size: 0.78rem; }
-  footer {
-    color: var(--muted);
-    font-size: 0.8rem;
-    line-height: 1.6;
-    text-align: center;
-    margin-top: 8px;
+  .live .bpm-big { font-size: 5rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+  .live .bpm-big .heart { font-size: 2.2rem; vertical-align: middle; margin-right: 8px; }
+  .live .bpm-unit { color: var(--muted); font-size: 1rem; letter-spacing: 0.1em; }
+  .live .zonebadge {
+    display: inline-block; margin-top: 16px; padding: 8px 20px; border-radius: 999px;
+    font-weight: 800; font-size: 1.1rem; background: var(--zc); color: #06121a;
   }
+  .live .zonesub { color: var(--muted); font-size: 0.9rem; margin-top: 8px; }
+
+  .target-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  select {
+    background: var(--card-2); border: 1px solid var(--border); color: var(--text);
+    font-size: 1rem; padding: 10px 12px; border-radius: 10px; font-weight: 600;
+  }
+  .pulse { animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { transform: scale(1);} 50% { transform: scale(1.12);} }
+
+  /* Full-screen alert flash overlay (iOS-safe visual fallback for vibration) */
+  #flash {
+    position: fixed; inset: 0; pointer-events: none; z-index: 999;
+    display: none; align-items: center; justify-content: center; flex-direction: column;
+    background: rgba(249,65,68,0.92); color: #fff; text-align: center;
+  }
+  #flash.show { display: flex; animation: flashpulse 0.6s ease-in-out infinite; }
+  #flash .ftitle { font-size: 2.4rem; font-weight: 900; }
+  #flash .fsub { font-size: 1.2rem; margin-top: 8px; }
+  @keyframes flashpulse { 0%,100% { opacity: 0.85; } 50% { opacity: 1; } }
+
+  footer { color: var(--muted); font-size: 0.78rem; line-height: 1.6; text-align: center; margin-top: 6px; }
+  .note { background: rgba(67,170,139,0.1); border: 1px solid rgba(67,170,139,0.3); color: #bfe; border-radius: 10px; padding: 10px 14px; font-size: 0.82rem; line-height: 1.5; margin-top: 14px; }
+  .warn { background: rgba(249,65,68,0.08); border: 1px solid rgba(249,65,68,0.3); color: #f7b; border-radius: 10px; padding: 10px 14px; font-size: 0.82rem; line-height: 1.5; margin-top: 14px; }
+  a { color: #4895ef; }
 </style>
 </head>
 <body>
+<div id="flash">
+  <div class="ftitle" id="flashTitle">BELOW ZONE</div>
+  <div class="fsub" id="flashSub"></div>
+</div>
+
 <div class="wrap">
   <header>
-    <h1>Heart Rate Zone Calculator</h1>
-    <p>Percentage of Maximum Heart Rate (MHR) method. Enter your age — everything updates live as you type.</p>
+    <h1>Heart Rate Zones</h1>
+    <p>Percentage of Maximum Heart Rate (MHR) method. Calculate your zones, then connect your Bluetooth strap and get a vibration + flash alert when you drop out of your target zone.</p>
   </header>
 
+  <div class="tabs">
+    <button class="tab active" data-tab="calc">📊 Calculator</button>
+    <button class="tab" data-tab="track">❤️ Live Tracker</button>
+  </div>
+
+  <!-- shared age/MHR settings live here, used by both tabs -->
   <section class="panel">
     <div class="controls">
       <div>
@@ -159,32 +189,74 @@
         <input type="range" id="mhrRange" min="120" max="220" value="180">
       </div>
     </div>
+    <div class="mhr-readout" style="margin-bottom:0;margin-top:20px">
+      <div class="big"><span id="mhrValue">180</span> <span style="font-size:1.2rem;font-weight:600;color:var(--muted)">bpm</span></div>
+      <div class="label">Estimated Maximum Heart Rate</div>
+      <div class="formula" id="formula">220 − 40 = 180 bpm</div>
+    </div>
   </section>
 
-  <div class="mhr-readout">
-    <div class="big"><span id="mhrValue">180</span> <span style="font-size:1.3rem;font-weight:600;color:var(--muted)">bpm</span></div>
-    <div class="label">Estimated Maximum Heart Rate</div>
-    <div class="formula" id="formula">220 − 40 = 180 bpm</div>
+  <!-- CALCULATOR TAB -->
+  <div class="panel-view active" id="view-calc">
+    <section class="zones" id="zones"></section>
+    <footer>
+      The “220 − age” formula is a rough estimate and doesn’t account for individual fitness levels.
+      Consult a fitness professional or medical practitioner for personalized advice.
+    </footer>
   </div>
 
-  <section class="zones" id="zones"></section>
+  <!-- TRACKER TAB -->
+  <div class="panel-view" id="view-track">
+    <div class="live" id="liveCard" style="--zc:var(--muted)">
+      <div class="bpm-big" id="bpmBig"><span class="heart" id="heart">🤍</span><span id="bpmNum">--</span></div>
+      <div class="bpm-unit">BPM</div>
+      <div><span class="zonebadge" id="zoneBadge" style="--zc:var(--muted)">Not connected</span></div>
+      <div class="zonesub" id="zoneSub">Connect your heart rate strap to begin</div>
+    </div>
 
-  <footer>
-    The “220 − age” formula is a rough estimate and doesn’t account for individual fitness levels.
-    Consult a fitness professional or medical practitioner for personalized advice.
-  </footer>
+    <section class="panel">
+      <label for="targetZone">Target zone — alert me if I drop below it</label>
+      <div class="target-row">
+        <select id="targetZone">
+          <option value="1">Zone 1 — Recovery</option>
+          <option value="2" selected>Zone 2 — Aerobic</option>
+          <option value="3">Zone 3 — Moderate</option>
+          <option value="4">Zone 4 — Hard</option>
+          <option value="5">Zone 5 — Maximal</option>
+        </select>
+        <span id="targetRange" style="color:var(--muted);font-variant-numeric:tabular-nums"></span>
+      </div>
+
+      <div style="margin-top:18px;display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn" id="connectBtn" style="flex:1;min-width:160px">🔗 Connect strap</button>
+        <button class="btn secondary" id="disconnectBtn" style="flex:1;min-width:160px" disabled>Disconnect</button>
+      </div>
+      <button class="btn secondary" id="testBtn" style="margin-top:10px">🔔 Test alert (vibrate + flash)</button>
+      <div class="status" id="status"></div>
+
+      <div class="note" id="supportNote"></div>
+      <div class="warn">
+        Heads up: web Bluetooth keeps reading only while this page is open and the screen is on
+        (a screen wake-lock is requested automatically while tracking). It’s built for use during a
+        workout with the phone in view — not background monitoring with the screen off.
+      </div>
+    </section>
+
+    <footer>This is a training aid, not a medical device. Don’t rely on it for clinical heart-rate monitoring.</footer>
+  </div>
 </div>
 
 <script>
   const ZONES = [
-    { num: 1, name: "Recovery — very light", low: 0.50, high: 0.60, color: "#4cc9f0" },
-    { num: 2, name: "Aerobic — light",       low: 0.60, high: 0.70, color: "#4895ef" },
-    { num: 3, name: "Aerobic/Anaerobic — moderate", low: 0.70, high: 0.80, color: "#43aa8b" },
-    { num: 4, name: "Anaerobic — hard",       low: 0.80, high: 0.90, color: "#f9844a" },
-    { num: 5, name: "Maximal — very hard",    low: 0.90, high: 1.00, color: "#f94144" },
+    { num: 1, name: "Recovery — very light",          low: 0.50, high: 0.60, color: "#4cc9f0" },
+    { num: 2, name: "Aerobic — light",                low: 0.60, high: 0.70, color: "#4895ef" },
+    { num: 3, name: "Aerobic/Anaerobic — moderate",   low: 0.70, high: 0.80, color: "#43aa8b" },
+    { num: 4, name: "Anaerobic — hard",               low: 0.80, high: 0.90, color: "#f9844a" },
+    { num: 5, name: "Maximal — very hard",            low: 0.90, high: 1.00, color: "#f94144" },
   ];
 
-  const ageEl   = document.getElementById("age");
+  // ---- shared elements ----
+  const ageEl    = document.getElementById("age");
   const ageRange = document.getElementById("ageRange");
   const mhrInput = document.getElementById("mhrInput");
   const mhrRange = document.getElementById("mhrRange");
@@ -199,18 +271,30 @@
     if (isNaN(age)) return null;
     return Math.round(220 - age);
   }
+  // bpm -> zone number (1..5), or 0 if below zone 1, 6 if at/above max
+  function zoneForBpm(bpm, mhr) {
+    if (!mhr) return null;
+    if (bpm < mhr * ZONES[0].low) return 0;
+    for (const z of ZONES) {
+      if (bpm < mhr * z.high) return z.num;
+    }
+    return 5; // at or above 100% -> still Zone 5
+  }
+  function zoneMeta(n) {
+    if (n === 0) return { num: 0, name: "Below Zone 1 — too easy", color: "#6b7785" };
+    return ZONES[n - 1];
+  }
 
-  function render() {
+  // ---- calculator render ----
+  function renderCalc() {
     const mhr = currentMHR();
     const usingOverride = !isNaN(parseFloat(mhrInput.value)) && parseFloat(mhrInput.value) > 0;
-
     if (mhr === null) {
       mhrValue.textContent = "—";
       formula.textContent = "Enter your age";
       zonesEl.innerHTML = "";
       return;
     }
-
     mhrValue.textContent = mhr;
     const age = parseFloat(ageEl.value);
     formula.textContent = usingOverride
@@ -220,8 +304,9 @@
     zonesEl.innerHTML = ZONES.map(z => {
       const lo = Math.round(mhr * z.low);
       const hi = Math.round(mhr * z.high);
+      const cur = (state.currentZone === z.num) ? " current" : "";
       return `
-        <div class="zone" style="--zc:${z.color}">
+        <div class="zone${cur}" style="--zc:${z.color}">
           <div class="num">Z${z.num}</div>
           <div class="meta">
             <div class="name">${z.name}</div>
@@ -235,27 +320,224 @@
     }).join("");
   }
 
-  // Keep age number + slider in sync
-  ageEl.addEventListener("input", () => {
-    if (ageEl.value) ageRange.value = ageEl.value;
-    render();
-  });
-  ageRange.addEventListener("input", () => {
-    ageEl.value = ageRange.value;
-    render();
+  function refreshTargetRange() {
+    const mhr = currentMHR();
+    const t = parseInt(targetZone.value, 10);
+    const z = ZONES[t - 1];
+    if (mhr && z) {
+      const lo = Math.round(mhr * z.low), hi = Math.round(mhr * z.high);
+      targetRange.textContent = "(" + lo + "–" + hi + " bpm — alert below " + lo + ")";
+    } else {
+      targetRange.textContent = "";
+    }
+  }
+
+  function renderAll() { renderCalc(); refreshTargetRange(); updateLive(); }
+
+  // sync inputs
+  ageEl.addEventListener("input", () => { if (ageEl.value) ageRange.value = ageEl.value; renderAll(); });
+  ageRange.addEventListener("input", () => { ageEl.value = ageRange.value; renderAll(); });
+  mhrInput.addEventListener("input", () => { if (mhrInput.value) mhrRange.value = mhrInput.value; renderAll(); });
+  mhrRange.addEventListener("input", () => { mhrInput.value = mhrRange.value; renderAll(); });
+
+  // ---- tabs ----
+  document.querySelectorAll(".tab").forEach(tab => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+      document.querySelectorAll(".panel-view").forEach(v => v.classList.remove("active"));
+      tab.classList.add("active");
+      document.getElementById("view-" + tab.dataset.tab).classList.add("active");
+    });
   });
 
-  // Keep MHR override + slider in sync
-  mhrInput.addEventListener("input", () => {
-    if (mhrInput.value) mhrRange.value = mhrInput.value;
-    render();
-  });
-  mhrRange.addEventListener("input", () => {
-    mhrInput.value = mhrRange.value;
-    render();
+  // =================== LIVE TRACKER ===================
+  const state = { bpm: null, currentZone: null, connected: false, device: null, char: null, wakeLock: null };
+
+  const connectBtn    = document.getElementById("connectBtn");
+  const disconnectBtn = document.getElementById("disconnectBtn");
+  const testBtn       = document.getElementById("testBtn");
+  const statusEl      = document.getElementById("status");
+  const bpmNum        = document.getElementById("bpmNum");
+  const heart         = document.getElementById("heart");
+  const zoneBadge     = document.getElementById("zoneBadge");
+  const zoneSub       = document.getElementById("zoneSub");
+  const liveCard      = document.getElementById("liveCard");
+  const targetZone    = document.getElementById("targetZone");
+  const targetRange   = document.getElementById("targetRange");
+  const flash         = document.getElementById("flash");
+  const flashTitle    = document.getElementById("flashTitle");
+  const flashSub      = document.getElementById("flashSub");
+  const supportNote   = document.getElementById("supportNote");
+
+  function setStatus(msg, cls) { statusEl.textContent = msg; statusEl.className = "status" + (cls ? " " + cls : ""); }
+
+  const supportsBLE = !!(navigator.bluetooth && navigator.bluetooth.requestDevice);
+  if (!supportsBLE) {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    supportNote.innerHTML = isIOS
+      ? "📱 <b>iPhone/iPad:</b> Safari can’t use Bluetooth web devices. Open this page in the free <a href='https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055' target='_blank'>Bluefy</a> browser to connect your strap. Everything else works in Safari."
+      : "⚠️ This browser doesn’t support Web Bluetooth. Use <b>Chrome</b> or <b>Edge</b> (desktop or Android) to connect a strap.";
+    connectBtn.disabled = true;
+  } else {
+    supportNote.innerHTML = "✅ Web Bluetooth supported. Tap <b>Connect strap</b>, then pick your <b>Polar H9</b> from the list.";
+  }
+
+  // ---- alert handling ----
+  let alerting = false;
+  function vibrate(pattern) { if (navigator.vibrate) { try { navigator.vibrate(pattern); } catch(e){} } }
+
+  function startBelowAlert(currentZ, targetZ) {
+    flashTitle.textContent = "⬇ BELOW ZONE " + targetZ;
+    flashSub.textContent = "You’re in " + (currentZ === 0 ? "below Zone 1" : "Zone " + currentZ) + " — pick it up!";
+    flash.classList.add("show");
+    if (!alerting) {
+      alerting = true;
+      // long repeating buzz pattern (where supported)
+      vibrate([400, 150, 400, 150, 400]);
+      state._alertInterval = setInterval(() => vibrate([400, 150, 400]), 1800);
+    }
+  }
+  function stopBelowAlert() {
+    flash.classList.remove("show");
+    if (alerting) {
+      alerting = false;
+      clearInterval(state._alertInterval);
+      vibrate(0);
+    }
+  }
+  function blipZoneChange() { vibrate(120); } // short tick on any zone transition
+
+  // ---- live display update ----
+  function updateLive() {
+    const mhr = currentMHR();
+    if (!state.connected) {
+      bpmNum.textContent = "--";
+      heart.textContent = "🤍";
+      zoneBadge.textContent = "Not connected";
+      zoneBadge.style.setProperty("--zc", "var(--muted)");
+      liveCard.style.setProperty("--zc", "var(--muted)");
+      liveCard.style.borderColor = "var(--border)";
+      liveCard.style.background = "var(--card)";
+      zoneSub.textContent = supportsBLE ? "Connect your heart rate strap to begin" : "Open in a Web-Bluetooth browser to connect";
+      return;
+    }
+    const bpm = state.bpm;
+    const zn = zoneForBpm(bpm, mhr);
+    const meta = zoneMeta(zn);
+    bpmNum.textContent = bpm == null ? "--" : bpm;
+    heart.textContent = "❤️";
+    heart.className = "heart pulse";
+    const label = zn === 0 ? "Below Zone 1" : "Zone " + zn;
+    zoneBadge.textContent = label + (meta.name ? " · " + meta.name.split(" — ")[0] : "");
+    zoneBadge.style.setProperty("--zc", meta.color);
+    liveCard.style.setProperty("--zc", meta.color);
+    liveCard.style.borderColor = meta.color;
+    liveCard.style.background = "linear-gradient(160deg, " + meta.color + "22, var(--card))";
+    const target = parseInt(targetZone.value, 10);
+    const tz = ZONES[target - 1];
+    const tLo = mhr ? Math.round(mhr * tz.low) : null;
+    zoneSub.textContent = "Target: Zone " + target + (tLo ? " (≥ " + tLo + " bpm)" : "");
+  }
+
+  // core: called on every new BPM reading
+  function onBpm(bpm) {
+    const mhr = currentMHR();
+    state.bpm = bpm;
+    const newZone = zoneForBpm(bpm, mhr);
+    const target = parseInt(targetZone.value, 10);
+
+    if (newZone !== state.currentZone) {
+      if (state.currentZone !== null) blipZoneChange();
+      state.currentZone = newZone;
+      renderCalc(); // highlight current zone in calculator tab too
+    }
+    // Below-target sustained alert
+    if (newZone < target) startBelowAlert(newZone, target);
+    else stopBelowAlert();
+
+    updateLive();
+  }
+
+  // ---- Bluetooth ----
+  function handleHRM(event) {
+    const value = event.target.value; // DataView
+    const flags = value.getUint8(0);
+    const is16 = flags & 0x1;
+    const bpm = is16 ? value.getUint16(1, true) : value.getUint8(1);
+    onBpm(bpm);
+  }
+
+  async function requestWakeLock() {
+    try { if ("wakeLock" in navigator) state.wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {}
+  }
+  function releaseWakeLock() { try { state.wakeLock && state.wakeLock.release(); } catch(e){} state.wakeLock = null; }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && state.connected) requestWakeLock();
   });
 
-  render();
+  async function connect() {
+    if (!supportsBLE) return;
+    try {
+      setStatus("Requesting device…");
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [{ services: ["heart_rate"] }],
+        optionalServices: ["battery_service"]
+      });
+      state.device = device;
+      device.addEventListener("gattserverdisconnected", onDisconnected);
+      setStatus("Connecting to " + (device.name || "device") + "…");
+      const server = await device.gatt.connect();
+      const service = await server.getPrimaryService("heart_rate");
+      const char = await service.getCharacteristic("heart_rate_measurement");
+      state.char = char;
+      await char.startNotifications();
+      char.addEventListener("characteristicvaluechanged", handleHRM);
+
+      state.connected = true;
+      state.currentZone = null;
+      connectBtn.disabled = true;
+      disconnectBtn.disabled = false;
+      setStatus("Connected to " + (device.name || "strap") + " ✓", "ok");
+      requestWakeLock();
+      updateLive();
+    } catch (err) {
+      if (err && err.name === "NotFoundError") setStatus("No device selected.");
+      else setStatus("Connection failed: " + (err && err.message ? err.message : err), "err");
+    }
+  }
+
+  function onDisconnected() {
+    state.connected = false;
+    state.bpm = null;
+    state.currentZone = null;
+    connectBtn.disabled = !supportsBLE;
+    disconnectBtn.disabled = true;
+    stopBelowAlert();
+    releaseWakeLock();
+    setStatus("Disconnected.");
+    heart.className = "heart";
+    renderCalc();
+    updateLive();
+  }
+
+  async function disconnect() {
+    try {
+      if (state.char) { try { await state.char.stopNotifications(); } catch(e){} }
+      if (state.device && state.device.gatt.connected) state.device.gatt.disconnect();
+    } finally { onDisconnected(); }
+  }
+
+  connectBtn.addEventListener("click", connect);
+  disconnectBtn.addEventListener("click", disconnect);
+  targetZone.addEventListener("change", () => { refreshTargetRange(); if (state.connected) onBpm(state.bpm); else updateLive(); });
+  testBtn.addEventListener("click", () => {
+    const t = parseInt(targetZone.value, 10);
+    startBelowAlert(0, t);
+    setTimeout(stopBelowAlert, 1500);
+  });
+
+  // init
+  renderAll();
 </script>
 </body>
 </html>
