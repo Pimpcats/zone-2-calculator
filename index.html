@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Heart Rate Zone Calculator — % of Max HR Method</title>
+<style>
+  :root {
+    --bg: #0f1419;
+    --card: #1a2129;
+    --card-2: #222b35;
+    --text: #e6edf3;
+    --muted: #9aa7b4;
+    --accent: #ff5a5f;
+    --border: #2c3742;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: linear-gradient(160deg, #0f1419 0%, #131b24 100%);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 32px 16px 64px;
+  }
+  .wrap { width: 100%; max-width: 720px; }
+  header h1 {
+    font-size: 1.7rem;
+    margin: 0 0 4px;
+    letter-spacing: -0.02em;
+  }
+  header p {
+    color: var(--muted);
+    margin: 0 0 24px;
+    font-size: 0.95rem;
+    line-height: 1.5;
+  }
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.25);
+  }
+  .controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  @media (max-width: 520px) { .controls { grid-template-columns: 1fr; } }
+  label {
+    display: block;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .field-row { display: flex; align-items: center; gap: 12px; }
+  input[type="number"] {
+    width: 100%;
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 1.4rem;
+    font-weight: 600;
+    padding: 12px 14px;
+    border-radius: 10px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  input[type="number"]:focus { border-color: var(--accent); }
+  input[type="range"] {
+    width: 100%;
+    margin-top: 14px;
+    accent-color: var(--accent);
+  }
+  .mhr-readout {
+    text-align: center;
+    margin: 4px 0 24px;
+  }
+  .mhr-readout .big {
+    font-size: 3rem;
+    font-weight: 800;
+    color: var(--accent);
+    line-height: 1;
+  }
+  .mhr-readout .label {
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin-top: 6px;
+  }
+  .mhr-readout .formula {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  .zones { display: flex; flex-direction: column; gap: 12px; }
+  .zone {
+    display: grid;
+    grid-template-columns: 64px 1fr auto;
+    align-items: center;
+    gap: 16px;
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    border-left: 5px solid var(--zc);
+    border-radius: 12px;
+    padding: 14px 18px;
+  }
+  .zone .num {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: var(--zc);
+  }
+  .zone .meta .name { font-weight: 600; font-size: 1rem; }
+  .zone .meta .pct { color: var(--muted); font-size: 0.82rem; margin-top: 2px; }
+  .zone .bpm {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .zone .bpm .range { font-size: 1.35rem; font-weight: 700; white-space: nowrap; }
+  .zone .bpm .unit { color: var(--muted); font-size: 0.78rem; }
+  footer {
+    color: var(--muted);
+    font-size: 0.8rem;
+    line-height: 1.6;
+    text-align: center;
+    margin-top: 8px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Heart Rate Zone Calculator</h1>
+    <p>Percentage of Maximum Heart Rate (MHR) method. Enter your age — everything updates live as you type.</p>
+  </header>
+
+  <section class="panel">
+    <div class="controls">
+      <div>
+        <label for="age">Your age</label>
+        <div class="field-row">
+          <input type="number" id="age" min="1" max="120" value="40" inputmode="numeric">
+          <span style="color:var(--muted)">yrs</span>
+        </div>
+        <input type="range" id="ageRange" min="10" max="100" value="40">
+      </div>
+      <div>
+        <label for="mhrInput">Max HR override <span style="text-transform:none;color:var(--muted)">(optional)</span></label>
+        <div class="field-row">
+          <input type="number" id="mhrInput" min="60" max="240" placeholder="auto" inputmode="numeric">
+          <span style="color:var(--muted)">bpm</span>
+        </div>
+        <input type="range" id="mhrRange" min="120" max="220" value="180">
+      </div>
+    </div>
+  </section>
+
+  <div class="mhr-readout">
+    <div class="big"><span id="mhrValue">180</span> <span style="font-size:1.3rem;font-weight:600;color:var(--muted)">bpm</span></div>
+    <div class="label">Estimated Maximum Heart Rate</div>
+    <div class="formula" id="formula">220 − 40 = 180 bpm</div>
+  </div>
+
+  <section class="zones" id="zones"></section>
+
+  <footer>
+    The “220 − age” formula is a rough estimate and doesn’t account for individual fitness levels.
+    Consult a fitness professional or medical practitioner for personalized advice.
+  </footer>
+</div>
+
+<script>
+  const ZONES = [
+    { num: 1, name: "Recovery — very light", low: 0.50, high: 0.60, color: "#4cc9f0" },
+    { num: 2, name: "Aerobic — light",       low: 0.60, high: 0.70, color: "#4895ef" },
+    { num: 3, name: "Aerobic/Anaerobic — moderate", low: 0.70, high: 0.80, color: "#43aa8b" },
+    { num: 4, name: "Anaerobic — hard",       low: 0.80, high: 0.90, color: "#f9844a" },
+    { num: 5, name: "Maximal — very hard",    low: 0.90, high: 1.00, color: "#f94144" },
+  ];
+
+  const ageEl   = document.getElementById("age");
+  const ageRange = document.getElementById("ageRange");
+  const mhrInput = document.getElementById("mhrInput");
+  const mhrRange = document.getElementById("mhrRange");
+  const mhrValue = document.getElementById("mhrValue");
+  const formula  = document.getElementById("formula");
+  const zonesEl  = document.getElementById("zones");
+
+  function currentMHR() {
+    const override = parseFloat(mhrInput.value);
+    if (!isNaN(override) && override > 0) return Math.round(override);
+    const age = parseFloat(ageEl.value);
+    if (isNaN(age)) return null;
+    return Math.round(220 - age);
+  }
+
+  function render() {
+    const mhr = currentMHR();
+    const usingOverride = !isNaN(parseFloat(mhrInput.value)) && parseFloat(mhrInput.value) > 0;
+
+    if (mhr === null) {
+      mhrValue.textContent = "—";
+      formula.textContent = "Enter your age";
+      zonesEl.innerHTML = "";
+      return;
+    }
+
+    mhrValue.textContent = mhr;
+    const age = parseFloat(ageEl.value);
+    formula.textContent = usingOverride
+      ? "Using manual override of " + mhr + " bpm"
+      : (isNaN(age) ? "" : "220 − " + age + " = " + mhr + " bpm");
+
+    zonesEl.innerHTML = ZONES.map(z => {
+      const lo = Math.round(mhr * z.low);
+      const hi = Math.round(mhr * z.high);
+      return `
+        <div class="zone" style="--zc:${z.color}">
+          <div class="num">Z${z.num}</div>
+          <div class="meta">
+            <div class="name">${z.name}</div>
+            <div class="pct">${Math.round(z.low*100)}–${Math.round(z.high*100)}% of MHR</div>
+          </div>
+          <div class="bpm">
+            <div class="range">${lo}–${hi}</div>
+            <div class="unit">bpm</div>
+          </div>
+        </div>`;
+    }).join("");
+  }
+
+  // Keep age number + slider in sync
+  ageEl.addEventListener("input", () => {
+    if (ageEl.value) ageRange.value = ageEl.value;
+    render();
+  });
+  ageRange.addEventListener("input", () => {
+    ageEl.value = ageRange.value;
+    render();
+  });
+
+  // Keep MHR override + slider in sync
+  mhrInput.addEventListener("input", () => {
+    if (mhrInput.value) mhrRange.value = mhrInput.value;
+    render();
+  });
+  mhrRange.addEventListener("input", () => {
+    mhrInput.value = mhrRange.value;
+    render();
+  });
+
+  render();
+</script>
+</body>
+</html>
