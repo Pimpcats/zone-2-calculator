@@ -3,22 +3,21 @@ import CoreBluetooth
 import UserNotifications
 
 /// Connects to a standard BLE heart-rate strap (service 0x180D), streams BPM,
-/// and fires local notifications when the wearer drops below their target zone —
-/// continuing to work while the app is backgrounded or the screen is locked,
-/// thanks to the `bluetooth-central` background mode + state restoration.
+/// and fires local notifications when the wearer leaves their target band —
+/// below `floorBpm` (too easy) or above `ceilingBpm` (too hard) — continuing to
+/// work while the app is backgrounded or the screen is locked.
 final class HeartRateManager: NSObject, ObservableObject {
 
-    // Published UI state
     @Published var bpm: Int? = nil
-    @Published var currentZone: Int? = nil
     @Published var connected = false
     @Published var statusText = "Idle"
     @Published var deviceName: String? = nil
     @Published var bluetoothReady = false
 
-    // Settings (mirrored from the UI / UserDefaults)
-    var age: Int = 40 { didSet { recomputeZone() } }
-    var targetZone: Int = 2 { didSet { recomputeZone() } }
+    /// Alert band, in bpm. Set from the view model based on Max HR + chosen zones.
+    var floorBpm: Int = 0          // never drop below this
+    var ceilingBpm: Int = 1000     // never go above this
+    var alertsEnabled = true
 
     /// Called on every heart-rate reading (used by the workout view model).
     var onReading: ((Int) -> Void)?
@@ -28,8 +27,8 @@ final class HeartRateManager: NSObject, ObservableObject {
     private let hrService = CBUUID(string: "180D")
     private let hrMeasurement = CBUUID(string: "2A37")
     private let restoreID = "com.pimpcats.zonealert.central"
-    private var lastBelowNotify = Date.distantPast
-    private var wasBelow = false
+    private var lastLowNotify = Date.distantPast
+    private var lastHighNotify = Date.distantPast
 
     override init() {
         super.init()
@@ -40,7 +39,7 @@ final class HeartRateManager: NSObject, ObservableObject {
         )
     }
 
-    // MARK: - Public controls
+    // MARK: - Controls
 
     func startScanning() {
         guard central.state == .poweredOn else {
@@ -59,52 +58,51 @@ final class HeartRateManager: NSObject, ObservableObject {
     }
 
     func sendTestAlert() {
-        notifyBelow(currentZoneNumber: 0, force: true)
+        notify(title: "🔔 Zone Alert test",
+               body: "Alerts are working. You'll be buzzed if you drop below \(floorBpm) or go above \(ceilingBpm) bpm.")
     }
 
-    // MARK: - Zone evaluation
+    // MARK: - Alert evaluation
 
-    private func mhr() -> Int { Zones.mhr(age: age) }
+    private func evaluate(_ value: Int) {
+        guard alertsEnabled else { return }
+        let now = Date()
+        if value < floorBpm {
+            if now.timeIntervalSince(lastLowNotify) > 25 {
+                lastLowNotify = now
+                notify(title: "⬇️ Heart rate too low",
+                       body: "\(value) bpm — below your Zone 2 floor of \(floorBpm). Pick up the pace.")
+            }
+            lastHighNotify = .distantPast
+        } else if value > ceilingBpm {
+            if now.timeIntervalSince(lastHighNotify) > 25 {
+                lastHighNotify = now
+                notify(title: "⬆️ Heart rate too high",
+                       body: "\(value) bpm — above your Zone 3 ceiling of \(ceilingBpm). Ease off.")
+            }
+            lastLowNotify = .distantPast
+        } else {
+            lastLowNotify = .distantPast
+            lastHighNotify = .distantPast
+        }
+    }
 
-    private func recomputeZone() {
-        guard let b = bpm else { return }
-        let z = Zones.zone(forBpm: b, mhr: mhr())
-        currentZone = z
-        evaluate(zone: z)
+    private func notify(title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        if #available(iOS 15.0, *) { content.interruptionLevel = .timeSensitive }
+        let req = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(req, withCompletionHandler: nil)
     }
 
     private func handle(bpm value: Int) {
         DispatchQueue.main.async {
             self.bpm = value
-            let z = Zones.zone(forBpm: value, mhr: self.mhr())
-            self.currentZone = z
-            self.evaluate(zone: z)
+            self.evaluate(value)
             self.onReading?(value)
         }
-    }
-
-    private func evaluate(zone: Int) {
-        let below = zone < targetZone
-        if below {
-            // Notify on entry, then re-notify periodically while still below.
-            let now = Date()
-            if !wasBelow || now.timeIntervalSince(lastBelowNotify) > 25 {
-                lastBelowNotify = now
-                notifyBelow(currentZoneNumber: zone, force: false)
-            }
-        }
-        wasBelow = below
-    }
-
-    private func notifyBelow(currentZoneNumber zone: Int, force: Bool) {
-        let content = UNMutableNotificationContent()
-        content.title = "⬇️ Below Zone \(targetZone)"
-        let where_ = zone == 0 ? "below Zone 1" : "Zone \(zone)"
-        content.body = "You're in \(where_) — pick up the pace to get back to Zone \(targetZone)."
-        content.sound = .default
-        if #available(iOS 15.0, *) { content.interruptionLevel = .timeSensitive }
-        let req = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(req, withCompletionHandler: nil)
     }
 }
 
@@ -113,17 +111,10 @@ final class HeartRateManager: NSObject, ObservableObject {
 extension HeartRateManager: CBCentralManagerDelegate {
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        DispatchQueue.main.async {
-            self.bluetoothReady = (central.state == .poweredOn)
-        }
+        DispatchQueue.main.async { self.bluetoothReady = (central.state == .poweredOn) }
         switch central.state {
         case .poweredOn:
-            // Reconnect to a known peripheral after restore, else start scanning.
-            if let p = peripheral {
-                central.connect(p, options: nil)
-            } else {
-                startScanning()
-            }
+            if let p = peripheral { central.connect(p, options: nil) }
         case .poweredOff:
             DispatchQueue.main.async { self.statusText = "Bluetooth is off"; self.connected = false }
         case .unauthorized:
@@ -133,7 +124,6 @@ extension HeartRateManager: CBCentralManagerDelegate {
         }
     }
 
-    // Required for state restoration (background relaunch).
     func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
         if let peripherals = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral],
            let p = peripherals.first {
@@ -166,10 +156,8 @@ extension HeartRateManager: CBCentralManagerDelegate {
         DispatchQueue.main.async {
             self.connected = false
             self.bpm = nil
-            self.currentZone = nil
             self.statusText = "Strap disconnected — retrying…"
         }
-        // Auto-reconnect (works in background too).
         central.connect(peripheral, options: nil)
     }
 
@@ -204,9 +192,9 @@ extension HeartRateManager: CBPeripheralDelegate {
         let flags = bytes[0]
         let value: Int
         if flags & 0x01 == 0 {
-            value = Int(bytes[1])                                   // 8-bit bpm
+            value = Int(bytes[1])
         } else {
-            value = Int(bytes[1]) | (Int(bytes[2]) << 8)           // 16-bit bpm
+            value = Int(bytes[1]) | (Int(bytes[2]) << 8)
         }
         handle(bpm: value)
     }

@@ -1,24 +1,28 @@
 import Foundation
 import SwiftUI
 
-/// Owns the live workout session: heart rate (BLE strap) + distance/pace (GPS) +
-/// duration, calories, time-in-zone and the HR history used for the live graph.
+/// Owns the live session: heart rate (BLE strap) + distance/pace (GPS) + duration,
+/// calories, time-in-zone, the HR history for the graph, peak HR, and the alert band.
 final class WorkoutViewModel: ObservableObject {
 
     // Live metrics
     @Published var bpm: Int? = nil
     @Published var currentZone: Int = 0
+    @Published var peakBpm: Int = 0
     @Published var duration: TimeInterval = 0
     @Published var calories: Double = 0
-    @Published var timeInZone: [Double] = Array(repeating: 0, count: 6)   // index 0 = below Z1, 1...5 = zones
+    @Published var timeInZone: [Double] = Array(repeating: 0, count: 6)   // 0 = below Z1, 1...5 = zones
     @Published var hrHistory: [Int] = []
     @Published var active = false
 
-    // Settings (persisted by the view via @AppStorage and pushed in here)
-    var age: Int = 40 { didSet { hrm.age = age } }
-    var targetZone: Int = 2 { didSet { hrm.targetZone = targetZone } }
-    var weightKg: Double = 75
-    var isMale: Bool = true
+    // Settings (pushed in from the persisted @AppStorage values)
+    private(set) var age: Int = 40
+    private(set) var isMale: Bool = true
+    private(set) var weightKg: Double = 75
+    private(set) var restingHR: Int = 60
+    private(set) var lowZone: Int = 2          // never drop below this zone's floor
+    private(set) var highZone: Int = 3         // never go above this zone's ceiling
+    private(set) var mhrOverride: Int? = nil   // measured Max HR (from VO2 test), if locked in
 
     let hrm = HeartRateManager()
     let loc = LocationTracker()
@@ -32,7 +36,27 @@ final class WorkoutViewModel: ObservableObject {
         hrm.onReading = { [weak self] bpm in self?.ingest(bpm: bpm) }
     }
 
-    // Derived
+    /// Apply persisted settings and recompute the alert band.
+    func apply(age: Int, isMale: Bool, weightKg: Double, restingHR: Int,
+               lowZone: Int, highZone: Int, mhrOverride: Int?) {
+        self.age = age
+        self.isMale = isMale
+        self.weightKg = weightKg
+        self.restingHR = max(30, restingHR)
+        self.lowZone = lowZone
+        self.highZone = highZone
+        self.mhrOverride = mhrOverride
+        hrm.floorBpm = floorBpm
+        hrm.ceilingBpm = ceilingBpm
+        objectWillChange.send()
+    }
+
+    // Derived values
+    var mhr: Int { mhrOverride ?? Zones.mhr(age: age) }
+    var usingMeasuredMax: Bool { mhrOverride != nil }
+    var floorBpm: Int { Zones.lowerBpm(zone: lowZone, mhr: mhr) }      // Zone 2 floor by default
+    var ceilingBpm: Int { Zones.upperBpm(zone: highZone, mhr: mhr) }   // Zone 3 ceiling by default
+
     var distanceMiles: Double { loc.distanceMeters / 1609.344 }
     var paceSecPerMile: Double? {
         guard distanceMiles > 0.02, duration > 0 else { return nil }
@@ -41,7 +65,12 @@ final class WorkoutViewModel: ObservableObject {
     var connected: Bool { hrm.connected }
     var bluetoothReady: Bool { hrm.bluetoothReady }
     var statusText: String { hrm.statusText }
-    var mhr: Int { Zones.mhr(age: age) }
+
+    /// Cooper/Uth heart-rate-ratio VO2max estimate: 15.3 × (HRmax / HRrest).
+    func vo2maxEstimate(usingMax hrMax: Int) -> Double {
+        guard restingHR > 0, hrMax > 0 else { return 0 }
+        return 15.3 * Double(hrMax) / Double(restingHR)
+    }
 
     // MARK: - Session control
 
@@ -71,16 +100,20 @@ final class WorkoutViewModel: ObservableObject {
         calories = 0
         timeInZone = Array(repeating: 0, count: 6)
         hrHistory = []
+        peakBpm = 0
         startDate = nil
         lastHRDate = nil
         loc.reset()
         timer?.invalidate()
     }
 
+    func resetPeak() { peakBpm = 0 }
+
     // MARK: - Data ingestion
 
     private func ingest(bpm value: Int) {
         bpm = value
+        if value > peakBpm { peakBpm = value }
         let z = Zones.zone(forBpm: value, mhr: mhr)
         currentZone = z
         guard active else { return }
@@ -97,7 +130,7 @@ final class WorkoutViewModel: ObservableObject {
         if hrHistory.count > 600 { hrHistory.removeFirst() }
     }
 
-    /// HR-based calorie estimate (Keytel et al., 2005), accumulated per sample.
+    /// HR-based calorie estimate (Keytel et al., 2005).
     private func addCalories(bpm: Int, dt: Double) {
         let hr = Double(bpm), a = Double(age), w = weightKg
         let perMin: Double = isMale
