@@ -20,6 +20,9 @@ final class HeartRateManager: NSObject, ObservableObject {
     var age: Int = 40 { didSet { recomputeZone() } }
     var targetZone: Int = 2 { didSet { recomputeZone() } }
 
+    /// Called on every heart-rate reading (used by the workout view model).
+    var onReading: ((Int) -> Void)?
+
     private var central: CBCentralManager!
     private var peripheral: CBPeripheral?
     private let hrService = CBUUID(string: "180D")
@@ -76,6 +79,7 @@ final class HeartRateManager: NSObject, ObservableObject {
             let z = Zones.zone(forBpm: value, mhr: self.mhr())
             self.currentZone = z
             self.evaluate(zone: z)
+            self.onReading?(value)
         }
     }
 

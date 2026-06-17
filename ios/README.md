@@ -8,6 +8,15 @@ This is the thing a web app *can't* do on iPhone: it keeps reading your strap wh
 work/do other things, and fires a notification (sound + banner) the moment your heart
 rate falls out of zone.
 
+## Workout dashboard
+A Polar-style live dashboard shows:
+- **Heart rate**, **live HR-zone graph**, and **time-in-zone** breakdown — from the strap.
+- **Distance** and **Pace** — from the iPhone's GPS (a chest strap has no GPS).
+- **Calories** — HR-based estimate (uses age/sex/weight from Settings).
+- **Duration** — workout timer with Start/Pause/Reset.
+
+Set your age, sex, weight and target zone in **Settings (gear icon)**.
+
 ## How it works
 - `bluetooth-central` background mode + CoreBluetooth **state restoration** keep the BLE
   connection alive while backgrounded and across relaunches.
