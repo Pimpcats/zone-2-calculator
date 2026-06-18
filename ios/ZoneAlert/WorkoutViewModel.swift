@@ -235,6 +235,7 @@ final class WorkoutViewModel: ObservableObject {
         restingRemaining -= 1
         if restingRemaining <= 0 {
             restingResult = restingLow
+            if restingResult > 0 { store?.addMeasurement(kind: "resting", bpm: restingResult) }
             cancelRestingTest()
         }
     }
@@ -268,6 +269,7 @@ final class WorkoutViewModel: ObservableObject {
         ownzoneRemaining -= 1
         if ownzoneRemaining <= 0 {
             if ownzoneThresholdHR == 0, let b = bpm { ownzoneThresholdHR = b }
+            if ownzoneThresholdHR > 0 { store?.addMeasurement(kind: "ownzone", bpm: ownzoneThresholdHR) }
             cancelOwnzoneTest()
         }
     }

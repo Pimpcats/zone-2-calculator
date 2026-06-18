@@ -12,6 +12,14 @@ struct WorkoutRecord: Codable, Identifiable {
     var timeInZone: [Double]   // index 1...5
 }
 
+/// A single physiology measurement (resting HR or OwnZone aerobic threshold) over time.
+struct Measurement: Codable, Identifiable {
+    var id = UUID()
+    var date: Date
+    var kind: String     // "resting" or "ownzone"
+    var bpm: Int
+}
+
 /// Aggregated totals over a span of workouts.
 struct ProgressTotals {
     var count: Int = 0
@@ -23,9 +31,34 @@ struct ProgressTotals {
 /// Stores workout history in UserDefaults and computes day/week aggregates.
 final class WorkoutStore: ObservableObject {
     @Published private(set) var records: [WorkoutRecord] = []
+    @Published private(set) var measurements: [Measurement] = []   // newest first
     private let key = "workouts.v1"
+    private let mKey = "measurements.v1"
 
-    init() { load() }
+    init() { load(); loadMeasurements() }
+
+    // MARK: - Measurements (resting HR / OwnZone threshold trends)
+
+    func addMeasurement(kind: String, bpm: Int) {
+        guard bpm > 0 else { return }
+        measurements.insert(Measurement(date: Date(), kind: kind, bpm: bpm), at: 0)
+        if measurements.count > 365 { measurements = Array(measurements.prefix(365)) }
+        if let data = try? JSONEncoder().encode(measurements) {
+            UserDefaults.standard.set(data, forKey: mKey)
+        }
+    }
+
+    /// Measurements of one kind, oldest → newest (for left-to-right charts).
+    func series(_ kind: String) -> [Measurement] {
+        measurements.filter { $0.kind == kind }.reversed()
+    }
+
+    private func loadMeasurements() {
+        if let data = UserDefaults.standard.data(forKey: mKey),
+           let arr = try? JSONDecoder().decode([Measurement].self, from: data) {
+            measurements = arr
+        }
+    }
 
     func add(_ r: WorkoutRecord) {
         records.insert(r, at: 0)

@@ -837,6 +837,20 @@ struct ProgressTabView: View {
 
                     weeklyChart
 
+                    if !store.series("resting").isEmpty || !store.series("ownzone").isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Trends").font(.headline)
+                            if !store.series("resting").isEmpty {
+                                TrendChart(title: "Resting HR",
+                                           points: store.series("resting"), color: .green)
+                            }
+                            if !store.series("ownzone").isEmpty {
+                                TrendChart(title: "Aerobic threshold (OwnZone)",
+                                           points: store.series("ownzone"), color: .orange)
+                            }
+                        }
+                    }
+
                     if store.records.isEmpty {
                         Text("No workouts saved yet. Finish a workout (tap Finish on the Workout tab) and it'll show up here.")
                             .font(.caption).foregroundColor(.secondary)
@@ -903,6 +917,56 @@ struct ProgressTabView: View {
         .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.05)))
     }
 
+}
+
+/// A small line chart of a measurement series over time (resting HR / threshold).
+struct TrendChart: View {
+    let title: String
+    let points: [Measurement]   // oldest → newest
+    let color: Color
+
+    var body: some View {
+        let vals = points.map { Double($0.bpm) }
+        let minV = vals.min() ?? 0
+        let maxV = vals.max() ?? 1
+        let range = max(maxV - minV, 1)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(title).font(.subheadline.bold())
+                Spacer()
+                if let last = points.last { Text("\(last.bpm) bpm").bold().foregroundColor(color) }
+            }
+            if vals.count > 1, let first = vals.first, let last = vals.last {
+                let delta = Int(last - first)
+                Text("\(delta >= 0 ? "▲" : "▼") \(abs(delta)) bpm over \(vals.count) tests")
+                    .font(.caption2).foregroundColor(.secondary)
+            } else {
+                Text("Run more tests to see the trend").font(.caption2).foregroundColor(.secondary)
+            }
+            GeometryReader { geo in
+                let w = geo.size.width, h = geo.size.height
+                ZStack {
+                    Path { p in
+                        for (i, v) in vals.enumerated() {
+                            let x = vals.count > 1 ? w * CGFloat(i) / CGFloat(vals.count - 1) : w / 2
+                            let y = h - CGFloat((v - minV) / range) * h
+                            if i == 0 { p.move(to: CGPoint(x: x, y: y)) }
+                            else { p.addLine(to: CGPoint(x: x, y: y)) }
+                        }
+                    }
+                    .stroke(color, style: StrokeStyle(lineWidth: 2, lineJoin: .round))
+                    ForEach(vals.indices, id: \.self) { i in
+                        let x = vals.count > 1 ? w * CGFloat(i) / CGFloat(vals.count - 1) : w / 2
+                        let y = h - CGFloat((vals[i] - minV) / range) * h
+                        Circle().fill(color).frame(width: 5, height: 5).position(x: x, y: y)
+                    }
+                }
+            }
+            .frame(height: 90)
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.05)))
+    }
 }
 
 /// A recent-workout row with a custom swipe-right-to-delete gesture:
