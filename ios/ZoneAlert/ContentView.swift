@@ -615,6 +615,7 @@ struct SettingsView: View {
     @State private var showNotifDenied = false
     @State private var exportURL: URL?
     @State private var showShare = false
+    @State private var showCompat = false
 
     private func intRow(_ label: String, value: Binding<Int>, unit: String) -> some View {
         HStack {
@@ -705,6 +706,9 @@ struct SettingsView: View {
                         Label("Forget / re-pair strap", systemImage: "xmark.circle")
                     }
                     .disabled(hrm.pinnedID == nil)
+                    Button { showCompat = true } label: {
+                        Label("Scan for compatible sensors", systemImage: "dot.radiowaves.left.and.right")
+                    }
                 } header: {
                     Text("Heart rate strap")
                 } footer: {
@@ -775,6 +779,9 @@ struct SettingsView: View {
             }
             .sheet(isPresented: $showShare) {
                 if let url = exportURL { ActivityView(items: [url]) }
+            }
+            .sheet(isPresented: $showCompat) {
+                CompatView(hrm: hrm)
             }
         }
     }

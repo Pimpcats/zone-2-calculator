@@ -2,6 +2,15 @@ import Foundation
 import CoreBluetooth
 import UserNotifications
 
+/// A nearby heart-rate sensor found during a compatibility scan.
+struct CompatDevice: Identifiable {
+    let id: UUID
+    var name: String
+    var rssi: Int
+    var rrSupported: Bool? = nil   // nil = not yet tested
+    var testing: Bool = false
+}
+
 /// Connects to a standard BLE heart-rate strap (service 0x180D), streams BPM,
 /// and fires local notifications when the wearer leaves their target band —
 /// below `floorBpm` (too easy) or above `ceilingBpm` (too hard) — continuing to
@@ -21,6 +30,13 @@ final class HeartRateManager: NSObject, ObservableObject {
     var floorBpm: Int = 0          // never drop below this
     var ceilingBpm: Int = 1000     // never go above this
     var alertsEnabled = true
+
+    // Compatibility scan (list nearby HR sensors without auto-connecting)
+    @Published var compatDevices: [CompatDevice] = []
+    private enum ScanMode { case normal, compat }
+    private var scanMode: ScanMode = .normal
+    private var compatPeripherals: [UUID: CBPeripheral] = [:]
+    private var testingID: UUID?
 
     /// Called on every heart-rate reading (used by the workout view model).
     var onReading: ((Int) -> Void)?
@@ -114,6 +130,47 @@ final class HeartRateManager: NSObject, ObservableObject {
         statusText = "Disconnected"
     }
 
+    // MARK: - Compatibility scan
+
+    func startCompatScan() {
+        guard central.state == .poweredOn else { statusText = "Turn on Bluetooth"; return }
+        scanMode = .compat
+        compatDevices = []
+        compatPeripherals = [:]
+        central.scanForPeripherals(withServices: [hrService], options: nil)
+    }
+
+    func stopCompatScan() {
+        if scanMode == .compat { central.stopScan() }
+        scanMode = .normal
+        if let id = testingID, let p = compatPeripherals[id] { central.cancelPeripheralConnection(p) }
+        testingID = nil
+    }
+
+    /// Briefly connect to a discovered device to confirm it streams R-R (HRV) data.
+    func testRR(id: UUID) {
+        guard let p = compatPeripherals[id] else { return }
+        central.stopScan()
+        testingID = id
+        if let i = compatDevices.firstIndex(where: { $0.id == id }) { compatDevices[i].testing = true }
+        p.delegate = self
+        central.connect(p, options: nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+            guard let self = self, self.testingID == id else { return }
+            self.finishTest(id: id, rr: false)
+        }
+    }
+
+    private func finishTest(id: UUID, rr: Bool) {
+        if let i = compatDevices.firstIndex(where: { $0.id == id }) {
+            compatDevices[i].rrSupported = rr
+            compatDevices[i].testing = false
+        }
+        if let p = compatPeripherals[id] { central.cancelPeripheralConnection(p) }
+        if testingID == id { testingID = nil }
+        if scanMode == .compat { central.scanForPeripherals(withServices: [hrService], options: nil) }
+    }
+
     func sendTestAlert() {
         notify(title: "🔔 Zone Alert test",
                body: "Alerts are working. You'll be buzzed if you drop below \(floorBpm) or go above \(ceilingBpm) bpm.")
@@ -191,13 +248,30 @@ extension HeartRateManager: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                         advertisementData: [String: Any], rssi RSSI: NSNumber) {
-        // If we're already paired to a specific strap, ignore every other one.
+        // Compatibility scan: just list devices, don't connect.
+        if scanMode == .compat {
+            let id = peripheral.identifier
+            compatPeripherals[id] = peripheral
+            if let i = compatDevices.firstIndex(where: { $0.id == id }) {
+                compatDevices[i].rssi = RSSI.intValue
+            } else {
+                compatDevices.append(CompatDevice(id: id,
+                                                  name: peripheral.name ?? "Unknown HR device",
+                                                  rssi: RSSI.intValue))
+            }
+            return
+        }
+        // Normal: if already paired to a specific strap, ignore every other one.
         if let pid = pinnedID, pid != peripheral.identifier.uuidString { return }
         pinIfNeeded(peripheral)
         connectTo(peripheral)
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        if peripheral.identifier == testingID {       // compatibility R-R test connection
+            peripheral.discoverServices([hrService])
+            return
+        }
         DispatchQueue.main.async {
             self.connected = true
             self.statusText = "Connected to \(peripheral.name ?? "strap")"
@@ -207,6 +281,8 @@ extension HeartRateManager: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+        if peripheral.identifier == testingID { return }   // test connection closing
+        guard peripheral == self.peripheral else { return } // ignore non-primary devices
         DispatchQueue.main.async {
             self.connected = false
             self.bpm = nil
@@ -217,6 +293,8 @@ extension HeartRateManager: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        if peripheral.identifier == testingID { finishTest(id: peripheral.identifier, rr: false); return }
+        guard peripheral == self.peripheral else { return }
         DispatchQueue.main.async { self.statusText = "Connection failed — retrying…" }
         central.connect(peripheral, options: nil)
     }
@@ -245,6 +323,13 @@ extension HeartRateManager: CBPeripheralDelegate {
               let data = characteristic.value, data.count >= 2 else { return }
         let bytes = [UInt8](data)
         let flags = bytes[0]
+
+        // Compatibility R-R test: report whether this device includes R-R data.
+        if peripheral.identifier == testingID {
+            if flags & 0x10 != 0 { finishTest(id: peripheral.identifier, rr: true) }
+            return
+        }
+
         var idx = 1
         let value: Int
         if flags & 0x01 == 0 {
