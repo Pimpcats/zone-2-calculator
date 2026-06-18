@@ -11,6 +11,7 @@ final class WorkoutViewModel: ObservableObject {
     @Published var bpm: Int? = nil
     @Published var currentZone: Int = 0
     @Published var peakBpm: Int = 0
+    @Published var lowBpm: Int = 0     // lowest reading seen (for resting-HR measurement)
     @Published var duration: TimeInterval = 0
     @Published var calories: Double = 0
     @Published var timeInZone: [Double] = Array(repeating: 0, count: 6)   // 0 = below Z1, 1...5 = zones
@@ -175,6 +176,7 @@ final class WorkoutViewModel: ObservableObject {
     }
 
     func resetPeak() { peakBpm = 0 }
+    func resetLow() { lowBpm = 0 }
 
     // MARK: - Notifications / test alert
 
@@ -228,6 +230,7 @@ final class WorkoutViewModel: ObservableObject {
     private func ingest(bpm value: Int) {
         bpm = value
         if value > peakBpm { peakBpm = value }
+        if value >= 30 && (lowBpm == 0 || value < lowBpm) { lowBpm = value }
         let z = Zones.zone(forBpm: value, mhr: mhr)
         currentZone = z
         guard active else { return }

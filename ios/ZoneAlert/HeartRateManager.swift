@@ -68,8 +68,40 @@ final class HeartRateManager: NSObject, ObservableObject {
             statusText = "Turn on Bluetooth to connect"
             return
         }
+        // 1. Reconnect directly to our pinned strap (works even if it's already
+        //    connected at the OS level and therefore not advertising).
+        if let pid = pinnedID, let uuid = UUID(uuidString: pid),
+           let known = central.retrievePeripherals(withIdentifiers: [uuid]).first {
+            connectTo(known)
+            return
+        }
+        // 2. Grab an HR strap already connected to the system (no pin yet).
+        if pinnedID == nil,
+           let conn = central.retrieveConnectedPeripherals(withServices: [hrService]).first {
+            pinIfNeeded(conn)
+            connectTo(conn)
+            return
+        }
+        // 3. Otherwise scan for advertising straps.
         statusText = pinnedName != nil ? "Searching for \(pinnedName!)…" : "Searching for your strap…"
         central.scanForPeripherals(withServices: [hrService], options: nil)
+    }
+
+    private func pinIfNeeded(_ peripheral: CBPeripheral) {
+        guard pinnedID == nil else { return }
+        pinnedID = peripheral.identifier.uuidString
+        pinnedName = peripheral.name ?? "Heart rate strap"
+        UserDefaults.standard.set(pinnedID, forKey: "pinnedStrapID")
+        UserDefaults.standard.set(pinnedName, forKey: "pinnedStrapName")
+    }
+
+    private func connectTo(_ peripheral: CBPeripheral) {
+        central.stopScan()
+        self.peripheral = peripheral
+        peripheral.delegate = self
+        deviceName = peripheral.name ?? pinnedName ?? "Heart rate strap"
+        statusText = "Connecting to \(deviceName ?? "strap")…"
+        central.connect(peripheral, options: nil)
     }
 
     func disconnect() {
@@ -156,22 +188,10 @@ extension HeartRateManager: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                         advertisementData: [String: Any], rssi RSSI: NSNumber) {
-        let idStr = peripheral.identifier.uuidString
         // If we're already paired to a specific strap, ignore every other one.
-        if let pid = pinnedID, pid != idStr { return }
-        central.stopScan()
-        if pinnedID == nil {
-            // First-time pairing: lock onto this strap from now on.
-            pinnedID = idStr
-            pinnedName = peripheral.name ?? "Heart rate strap"
-            UserDefaults.standard.set(idStr, forKey: "pinnedStrapID")
-            UserDefaults.standard.set(pinnedName, forKey: "pinnedStrapName")
-        }
-        self.peripheral = peripheral
-        peripheral.delegate = self
-        self.deviceName = peripheral.name ?? "Heart rate strap"
-        self.statusText = "Connecting to \(self.deviceName ?? "strap")…"
-        central.connect(peripheral, options: nil)
+        if let pid = pinnedID, pid != peripheral.identifier.uuidString { return }
+        pinIfNeeded(peripheral)
+        connectTo(peripheral)
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {

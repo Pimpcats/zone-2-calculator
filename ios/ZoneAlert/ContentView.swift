@@ -250,7 +250,7 @@ struct VO2MaxView: View {
     private var hrMax: Int { vm.peakBpm > 0 ? vm.peakBpm : vm.mhr }
     private var vo2: Double { vm.vo2maxEstimate(usingMax: hrMax) }
 
-    @State private var mode = 0
+    @State private var mode = 1
     @AppStorage("vo2IntervalSec") private var vo2IntervalSec = 120
 
     var body: some View {
@@ -259,15 +259,76 @@ struct VO2MaxView: View {
             ScrollView {
                 VStack(spacing: 18) {
                     Picker("", selection: $mode) {
-                        Text("Test").tag(0)
-                        Text("Guide").tag(1)
+                        Text("Resting").tag(0)
+                        Text("Max Test").tag(1)
+                        Text("Guide").tag(2)
                     }
                     .pickerStyle(.segmented)
 
-                    if mode == 0 { testContent } else { guideContent }
+                    switch mode {
+                    case 0: restingContent
+                    case 1: testContent
+                    default: guideContent
+                    }
                 }
                 .padding(18)
             }
+        }
+    }
+
+    private var connectionControls: some View {
+        Group {
+            if vm.connected {
+                Button { vm.disconnectStrap() } label: {
+                    Label("Disconnect", systemImage: "xmark.circle").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered).tint(.gray)
+            } else {
+                Button { vm.connect() } label: {
+                    Label("Connect strap", systemImage: "antenna.radiowaves.left.and.right")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent).tint(.red)
+                .disabled(!vm.bluetoothReady)
+            }
+        }
+    }
+
+    private var restingContent: some View {
+        VStack(spacing: 18) {
+            Text("Resting Heart Rate")
+                .font(.title2.bold()).frame(maxWidth: .infinity, alignment: .leading)
+
+            Text("Sit or lie down, relax, and stay still for 1–2 minutes. The app tracks your lowest reading — that's your resting HR. Best measured first thing in the morning.")
+                .font(.footnote).foregroundColor(.secondary)
+
+            HStack(spacing: 14) {
+                bigStat(title: "Current", value: vm.bpm.map(String.init) ?? "--",
+                        unit: "bpm", color: Color(red: 0.30, green: 0.66, blue: 1.0))
+                bigStat(title: "Lowest", value: vm.lowBpm > 0 ? "\(vm.lowBpm)" : "--",
+                        unit: "bpm", color: .green)
+            }
+
+            Text("Current resting HR setting: \(restingHR) bpm")
+                .font(.caption).foregroundColor(.secondary)
+
+            Button {
+                if vm.lowBpm > 0 { restingHR = vm.lowBpm }
+            } label: {
+                Label(vm.lowBpm > 0 ? "Use \(vm.lowBpm) bpm as resting HR" : "No reading yet",
+                      systemImage: "lock.fill").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent).tint(.green).disabled(vm.lowBpm == 0)
+
+            HStack {
+                Button("Reset lowest") { vm.resetLow() }.buttonStyle(.bordered)
+                Spacer()
+            }
+
+            connectionControls
+
+            Text("Your resting HR feeds the VO₂ Max estimate on the Max Test tab.")
+                .font(.caption2).foregroundColor(.secondary)
         }
     }
 
@@ -318,14 +379,9 @@ struct VO2MaxView: View {
             HStack {
                 Button("Reset peak") { vm.resetPeak() }.buttonStyle(.bordered)
                 Spacer()
-                if vm.connected {
-                    Button("Disconnect") { vm.disconnectStrap() }.buttonStyle(.bordered).tint(.gray)
-                } else {
-                    Button("Connect strap") { vm.connect() }
-                        .buttonStyle(.borderedProminent).tint(.red)
-                        .disabled(!vm.bluetoothReady)
-                }
             }
+
+            connectionControls
 
             Text("VO₂ Max here is a rough estimate from the heart-rate-ratio method, not lab-measured. Push to true max only if you're healthy and cleared to.")
                 .font(.caption2).foregroundColor(.secondary)
