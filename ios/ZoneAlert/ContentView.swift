@@ -23,8 +23,10 @@ struct ContentView: View {
     @AppStorage("isMale") private var isMale: Bool = true
     @AppStorage("weightLbs") private var weightLbs: Double = 165
     @AppStorage("restingHR") private var restingHR: Int = 60
-    @AppStorage("lowZone") private var lowZone: Int = 2
-    @AppStorage("highZone") private var highZone: Int = 3
+    @AppStorage("bandZone") private var bandZone: Int = 2
+    @AppStorage("customBand") private var customBand: Bool = false
+    @AppStorage("floorBpmManual") private var floorBpmManual: Int = 114
+    @AppStorage("ceilingBpmManual") private var ceilingBpmManual: Int = 133
     @AppStorage("useMeasuredMax") private var useMeasuredMax: Bool = false
     @AppStorage("measuredMax") private var measuredMax: Int = 0
 
@@ -40,7 +42,8 @@ struct ContentView: View {
             ProgressTabView(store: store)
                 .tabItem { Label("Progress", systemImage: "chart.bar.fill") }
             SettingsView(vm: vm, hrm: vm.hrm, age: $age, isMale: $isMale, weightLbs: $weightLbs,
-                         restingHR: $restingHR, lowZone: $lowZone, highZone: $highZone,
+                         restingHR: $restingHR, bandZone: $bandZone, customBand: $customBand,
+                         floorBpmManual: $floorBpmManual, ceilingBpmManual: $ceilingBpmManual,
                          useMeasuredMax: $useMeasuredMax, measuredMax: $measuredMax)
                 .tabItem { Label("Settings", systemImage: "gearshape.fill") }
         }
@@ -51,16 +54,26 @@ struct ContentView: View {
         .onChange(of: isMale) { _ in applySettings() }
         .onChange(of: weightLbs) { _ in applySettings() }
         .onChange(of: restingHR) { _ in applySettings() }
-        .onChange(of: lowZone) { _ in applySettings() }
-        .onChange(of: highZone) { _ in applySettings() }
+        .onChange(of: bandZone) { _ in applySettings() }
+        .onChange(of: customBand) { on in
+            if on {   // prefill the manual fields from the current zone band
+                floorBpmManual = Zones.lowerBpm(zone: bandZone, mhr: vm.mhr)
+                ceilingBpmManual = Zones.upperBpm(zone: bandZone, mhr: vm.mhr)
+            }
+            applySettings()
+        }
+        .onChange(of: floorBpmManual) { _ in applySettings() }
+        .onChange(of: ceilingBpmManual) { _ in applySettings() }
         .onChange(of: useMeasuredMax) { _ in applySettings() }
         .onChange(of: measuredMax) { _ in applySettings() }
     }
 
     private func applySettings() {
         let override = (useMeasuredMax && measuredMax > 0) ? measuredMax : nil
+        let mFloor = customBand ? floorBpmManual : nil
+        let mCeil = customBand ? ceilingBpmManual : nil
         vm.apply(age: age, isMale: isMale, weightKg: weightLbs * 0.453592, restingHR: restingHR,
-                 lowZone: lowZone, highZone: highZone, mhrOverride: override)
+                 bandZone: bandZone, mhrOverride: override, manualFloor: mFloor, manualCeiling: mCeil)
     }
 
     private func requestNotifications() {
@@ -512,8 +525,10 @@ struct SettingsView: View {
     @Binding var isMale: Bool
     @Binding var weightLbs: Double
     @Binding var restingHR: Int
-    @Binding var lowZone: Int
-    @Binding var highZone: Int
+    @Binding var bandZone: Int
+    @Binding var customBand: Bool
+    @Binding var floorBpmManual: Int
+    @Binding var ceilingBpmManual: Int
     @Binding var useMeasuredMax: Bool
     @Binding var measuredMax: Int
 
@@ -565,16 +580,21 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Picker("Never drop below (floor)", selection: $lowZone) {
-                        ForEach(Zones.all) { z in Text("Zone \(z.id) floor").tag(z.id) }
-                    }
-                    Picker("Never exceed (ceiling)", selection: $highZone) {
-                        ForEach(Zones.all) { z in Text("Zone \(z.id) ceiling").tag(z.id) }
+                    Toggle("Set band manually (bpm)", isOn: $customBand)
+                    if customBand {
+                        intRow("Don't drop below", value: $floorBpmManual, unit: "bpm")
+                        intRow("Don't exceed", value: $ceilingBpmManual, unit: "bpm")
+                    } else {
+                        Picker("Stay in zone", selection: $bandZone) {
+                            ForEach(Zones.all) { z in Text("Zone \(z.id) · \(z.name)").tag(z.id) }
+                        }
                     }
                 } header: {
                     Text("Alert band")
                 } footer: {
-                    Text("With Max HR \(vm.mhr): you'll be alerted if you drop below \(vm.floorBpm) bpm (Zone \(lowZone) floor) or rise above \(vm.ceilingBpm) bpm (Zone \(highZone) ceiling).")
+                    Text(customBand
+                         ? "Alerts if you drop below \(vm.floorBpm) or rise above \(vm.ceilingBpm) bpm."
+                         : "Stay in Zone \(bandZone): with Max HR \(vm.mhr) that's \(vm.floorBpm)–\(vm.ceilingBpm) bpm. You'll be alerted whenever you leave that range.")
                 }
 
                 Section {

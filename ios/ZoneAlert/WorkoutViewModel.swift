@@ -32,9 +32,10 @@ final class WorkoutViewModel: ObservableObject {
     private(set) var isMale: Bool = true
     private(set) var weightKg: Double = 75
     private(set) var restingHR: Int = 60
-    private(set) var lowZone: Int = 2          // never drop below this zone's floor
-    private(set) var highZone: Int = 3         // never go above this zone's ceiling
+    private(set) var bandZone: Int = 2         // the zone you want to stay inside
     private(set) var mhrOverride: Int? = nil   // measured Max HR (from VO2 test), if locked in
+    private(set) var manualFloor: Int? = nil   // direct bpm floor (manual band mode)
+    private(set) var manualCeiling: Int? = nil // direct bpm ceiling (manual band mode)
 
     let hrm = HeartRateManager()
     let loc = LocationTracker()
@@ -105,14 +106,15 @@ final class WorkoutViewModel: ObservableObject {
 
     /// Apply persisted settings and recompute the alert band.
     func apply(age: Int, isMale: Bool, weightKg: Double, restingHR: Int,
-               lowZone: Int, highZone: Int, mhrOverride: Int?) {
+               bandZone: Int, mhrOverride: Int?, manualFloor: Int?, manualCeiling: Int?) {
         self.age = age
         self.isMale = isMale
         self.weightKg = weightKg
         self.restingHR = max(30, restingHR)
-        self.lowZone = lowZone
-        self.highZone = highZone
+        self.bandZone = bandZone
         self.mhrOverride = mhrOverride
+        self.manualFloor = manualFloor
+        self.manualCeiling = manualCeiling
         hrm.floorBpm = floorBpm
         hrm.ceilingBpm = ceilingBpm
         objectWillChange.send()
@@ -121,8 +123,9 @@ final class WorkoutViewModel: ObservableObject {
     // Derived values
     var mhr: Int { mhrOverride ?? Zones.mhr(age: age) }
     var usingMeasuredMax: Bool { mhrOverride != nil }
-    var floorBpm: Int { Zones.lowerBpm(zone: lowZone, mhr: mhr) }      // Zone 2 floor by default
-    var ceilingBpm: Int { Zones.upperBpm(zone: highZone, mhr: mhr) }   // Zone 3 ceiling by default
+    var usingManualBand: Bool { manualFloor != nil || manualCeiling != nil }
+    var floorBpm: Int { manualFloor ?? Zones.lowerBpm(zone: bandZone, mhr: mhr) }
+    var ceilingBpm: Int { manualCeiling ?? Zones.upperBpm(zone: bandZone, mhr: mhr) }
 
     var distanceMiles: Double { loc.distanceMeters / 1609.344 }
     var paceSecPerMile: Double? {
