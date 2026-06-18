@@ -700,7 +700,11 @@ struct ProgressTabView: View {
                     } else {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Recent workouts").font(.headline)
-                            ForEach(store.records.prefix(20)) { r in recentRow(r) }
+                            Text("Swipe a workout right to delete it.")
+                                .font(.caption2).foregroundColor(.secondary)
+                            ForEach(store.records.prefix(20)) { r in
+                                RecentWorkoutRow(record: r) { store.delete(r) }
+                            }
                         }
                     }
                 }
@@ -755,20 +759,74 @@ struct ProgressTabView: View {
         .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.05)))
     }
 
-    private func recentRow(_ r: WorkoutRecord) -> some View {
+}
+
+/// A recent-workout row with a custom swipe-right-to-delete gesture:
+/// swipe right to reveal Delete (tap it), or keep swiping to confirm.
+struct RecentWorkoutRow: View {
+    let record: WorkoutRecord
+    let onDelete: () -> Void
+
+    @State private var offset: CGFloat = 0
+    @State private var base: CGFloat = 0
+    private let revealWidth: CGFloat = 96
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            Button { confirmDelete() } label: {
+                Label("Delete", systemImage: "trash")
+                    .font(.callout.bold())
+                    .foregroundColor(.white)
+                    .frame(width: revealWidth)
+                    .frame(maxHeight: .infinity)
+                    .background(Color.red)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .opacity(offset > 4 ? 1 : 0)
+
+            content
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color(white: 0.11)))
+                .offset(x: offset)
+                .gesture(
+                    DragGesture(minimumDistance: 14)
+                        .onChanged { v in
+                            offset = min(max(0, base + v.translation.width), 230)
+                        }
+                        .onEnded { v in
+                            let x = base + v.translation.width
+                            if x > 190 {
+                                confirmDelete()
+                            } else if x > 55 {
+                                base = revealWidth
+                                withAnimation(.spring(response: 0.3)) { offset = revealWidth }
+                            } else {
+                                base = 0
+                                withAnimation(.spring(response: 0.3)) { offset = 0 }
+                            }
+                        }
+                )
+        }
+    }
+
+    private var content: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(r.date, format: .dateTime.weekday().month().day().hour().minute())
+                Text(record.date, format: .dateTime.weekday().month().day().hour().minute())
                     .font(.callout.bold())
-                Text("\(WorkoutViewModel.clock(r.duration)) · \(String(format: "%.2f mi", r.distanceMiles)) · avg \(r.avgBpm) bpm")
+                Text("\(WorkoutViewModel.clock(record.duration)) · \(String(format: "%.2f mi", record.distanceMiles)) · avg \(record.avgBpm) bpm")
                     .font(.caption).foregroundColor(.secondary)
             }
             Spacer()
-            Text("\(Int(r.calories)) kcal").font(.caption.bold())
+            Text("\(Int(record.calories)) kcal").font(.caption.bold())
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.04)))
-        .contextMenu { Button(role: .destructive) { store.delete(r) } label: { Label("Delete", systemImage: "trash") } }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+
+    private func confirmDelete() {
+        withAnimation(.easeIn(duration: 0.2)) { offset = 420 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onDelete() }
     }
 }
 
