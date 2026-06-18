@@ -19,6 +19,14 @@ final class WorkoutViewModel: ObservableObject {
     @Published var active = false
     @Published var notifStatus: String = "Checking…"
 
+    // 5-minute resting-HR test
+    @Published var restingTesting = false
+    @Published var restingRemaining = 0      // seconds left
+    @Published var restingLow = 0            // lowest HR seen during the test
+    @Published var restingResult = 0         // final resting HR after the test
+    private var restingTimer: Timer?
+    private let restingTestLength = 300
+
     // Settings (pushed in from the persisted @AppStorage values)
     private(set) var age: Int = 40
     private(set) var isMale: Bool = true
@@ -178,6 +186,34 @@ final class WorkoutViewModel: ObservableObject {
     func resetPeak() { peakBpm = 0 }
     func resetLow() { lowBpm = 0 }
 
+    // MARK: - 5-minute resting-HR test
+
+    func startRestingTest() {
+        restingTesting = true
+        restingRemaining = restingTestLength
+        restingLow = 0
+        restingResult = 0
+        restingTimer?.invalidate()
+        let t = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in self?.restingTick() }
+        RunLoop.main.add(t, forMode: .common)
+        restingTimer = t
+    }
+
+    func cancelRestingTest() {
+        restingTesting = false
+        restingTimer?.invalidate()
+        restingTimer = nil
+    }
+
+    private func restingTick() {
+        guard restingTesting else { return }
+        restingRemaining -= 1
+        if restingRemaining <= 0 {
+            restingResult = restingLow
+            cancelRestingTest()
+        }
+    }
+
     // MARK: - Notifications / test alert
 
     /// Refresh the human-readable notification permission status shown in Settings.
@@ -231,6 +267,7 @@ final class WorkoutViewModel: ObservableObject {
         bpm = value
         if value > peakBpm { peakBpm = value }
         if value >= 30 && (lowBpm == 0 || value < lowBpm) { lowBpm = value }
+        if restingTesting && value >= 30 && (restingLow == 0 || value < restingLow) { restingLow = value }
         let z = Zones.zone(forBpm: value, mhr: mhr)
         currentZone = z
         guard active else { return }

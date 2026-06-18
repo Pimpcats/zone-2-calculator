@@ -299,37 +299,70 @@ struct VO2MaxView: View {
             Text("Resting Heart Rate")
                 .font(.title2.bold()).frame(maxWidth: .infinity, alignment: .leading)
 
-            Text("Sit or lie down, relax, and stay still for 1–2 minutes. The app tracks your lowest reading — that's your resting HR. Best measured first thing in the morning.")
+            Text("Measures your resting heart rate — a key marker of fitness and recovery (generally, lower is fitter).")
                 .font(.footnote).foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(spacing: 6) {
+                Image(systemName: "bed.double.fill").font(.title2).foregroundColor(.red)
+                Text("Lay down, relax, and breathe normally for the full 5 minutes.")
+                    .font(.subheadline).multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity).padding(14)
+            .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.05)))
 
             HStack(spacing: 14) {
                 bigStat(title: "Current", value: vm.bpm.map(String.init) ?? "--",
                         unit: "bpm", color: Color(red: 0.30, green: 0.66, blue: 1.0))
-                bigStat(title: "Lowest", value: vm.lowBpm > 0 ? "\(vm.lowBpm)" : "--",
-                        unit: "bpm", color: .green)
+                bigStat(title: vm.restingTesting ? "Lowest so far" : "Result",
+                        value: restingDisplayValue, unit: "bpm", color: .green)
+            }
+
+            if vm.restingTesting {
+                VStack(spacing: 4) {
+                    Text("Time remaining").font(.caption).foregroundColor(.secondary)
+                    Text(WorkoutViewModel.clock(TimeInterval(vm.restingRemaining)))
+                        .font(.system(size: 44, weight: .bold, design: .rounded)).monospacedDigit()
+                    ProgressView(value: Double(300 - vm.restingRemaining), total: 300).tint(.red)
+                }
+                Button(role: .destructive) { vm.cancelRestingTest() } label: {
+                    Label("Cancel test", systemImage: "stop.circle").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            } else {
+                Button {
+                    vm.startRestingTest()
+                } label: {
+                    Label(vm.connected ? "Start 5-minute test" : "Connect strap to start",
+                          systemImage: "play.fill").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent).tint(.red)
+                .disabled(!vm.connected)
+
+                if vm.restingResult > 0 {
+                    Button {
+                        restingHR = vm.restingResult
+                    } label: {
+                        Label("Use \(vm.restingResult) bpm as resting HR", systemImage: "lock.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent).tint(.green)
+                }
             }
 
             Text("Current resting HR setting: \(restingHR) bpm")
                 .font(.caption).foregroundColor(.secondary)
-
-            Button {
-                if vm.lowBpm > 0 { restingHR = vm.lowBpm }
-            } label: {
-                Label(vm.lowBpm > 0 ? "Use \(vm.lowBpm) bpm as resting HR" : "No reading yet",
-                      systemImage: "lock.fill").frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent).tint(.green).disabled(vm.lowBpm == 0)
-
-            HStack {
-                Button("Reset lowest") { vm.resetLow() }.buttonStyle(.bordered)
-                Spacer()
-            }
 
             connectionControls
 
             Text("Your resting HR feeds the VO₂ Max estimate on the Max Test tab.")
                 .font(.caption2).foregroundColor(.secondary)
         }
+    }
+
+    private var restingDisplayValue: String {
+        if vm.restingTesting { return vm.restingLow > 0 ? "\(vm.restingLow)" : "--" }
+        return vm.restingResult > 0 ? "\(vm.restingResult)" : "--"
     }
 
     private var testContent: some View {
