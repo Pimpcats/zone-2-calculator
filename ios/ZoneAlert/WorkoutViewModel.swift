@@ -1,5 +1,7 @@
 import Foundation
 import SwiftUI
+import UIKit
+import UserNotifications
 
 /// Owns the live session: heart rate (BLE strap) + distance/pace (GPS) + duration,
 /// calories, time-in-zone, the HR history for the graph, peak HR, and the alert band.
@@ -14,6 +16,7 @@ final class WorkoutViewModel: ObservableObject {
     @Published var timeInZone: [Double] = Array(repeating: 0, count: 6)   // 0 = below Z1, 1...5 = zones
     @Published var hrHistory: [Int] = []
     @Published var active = false
+    @Published var notifStatus: String = "Checking…"
 
     // Settings (pushed in from the persisted @AppStorage values)
     private(set) var age: Int = 40
@@ -108,6 +111,53 @@ final class WorkoutViewModel: ObservableObject {
     }
 
     func resetPeak() { peakBpm = 0 }
+
+    // MARK: - Notifications / test alert
+
+    /// Refresh the human-readable notification permission status shown in Settings.
+    func refreshNotifStatus() {
+        UNUserNotificationCenter.current().getNotificationSettings { s in
+            DispatchQueue.main.async {
+                switch s.authorizationStatus {
+                case .authorized:   self.notifStatus = "On"
+                case .provisional:  self.notifStatus = "On (quiet)"
+                case .ephemeral:    self.notifStatus = "On"
+                case .denied:       self.notifStatus = "Off — enable in iOS Settings"
+                case .notDetermined: self.notifStatus = "Not yet allowed"
+                @unknown default:   self.notifStatus = "Unknown"
+                }
+            }
+        }
+    }
+
+    /// Run the test alert: immediate haptic + a notification. Calls `onDenied`
+    /// (on the main thread) if the user must enable notifications in iOS Settings.
+    func runTestAlert(onDenied: @escaping () -> Void) {
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)   // tactile confirmation
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { s in
+            switch s.authorizationStatus {
+            case .authorized, .provisional, .ephemeral:
+                self.hrm.sendTestAlert()
+            case .notDetermined:
+                center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+                    self.refreshNotifStatus()
+                    if granted { self.hrm.sendTestAlert() }
+                    else { DispatchQueue.main.async { onDenied() } }
+                }
+            case .denied:
+                DispatchQueue.main.async { onDenied() }
+            @unknown default:
+                self.hrm.sendTestAlert()
+            }
+        }
+    }
+
+    func openSystemSettings() {
+        if let url = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(url)
+        }
+    }
 
     // MARK: - Data ingestion
 

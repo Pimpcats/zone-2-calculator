@@ -295,6 +295,8 @@ struct SettingsView: View {
     @Binding var useMeasuredMax: Bool
     @Binding var measuredMax: Int
 
+    @State private var showNotifDenied = false
+
     var body: some View {
         NavigationView {
             Form {
@@ -335,16 +337,35 @@ struct SettingsView: View {
 
                 Section {
                     HStack {
-                        Text("Stay below").foregroundColor(.secondary)
+                        Text("Stay between").foregroundColor(.secondary)
                         Spacer()
                         Text("\(vm.floorBpm)–\(vm.ceilingBpm) bpm").bold()
                     }
-                    Button("Test alert") { vm.hrm.sendTestAlert() }
+                    HStack {
+                        Text("Notifications").foregroundColor(.secondary)
+                        Spacer()
+                        Text(vm.notifStatus)
+                            .foregroundColor(vm.notifStatus == "On" ? .green : .orange)
+                    }
+                    Button {
+                        vm.runTestAlert(onDenied: { showNotifDenied = true })
+                    } label: {
+                        Label("Test alert (buzz + banner)", systemImage: "bell.badge")
+                    }
                 } header: {
                     Text("Your target band")
+                } footer: {
+                    Text("Tip: you'll feel a buzz immediately. The banner/sound shows here and on your lock screen. If it says Notifications: Off, tap Test and choose Open Settings → turn on Allow Notifications.")
                 }
             }
             .navigationTitle("Settings")
+            .onAppear { vm.refreshNotifStatus() }
+            .alert("Turn on notifications", isPresented: $showNotifDenied) {
+                Button("Open Settings") { vm.openSystemSettings() }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("Notifications are turned off for Zone Alert, so zone alerts can't show. Open Settings → Notifications → allow them, then try the test again.")
+            }
         }
     }
 }
