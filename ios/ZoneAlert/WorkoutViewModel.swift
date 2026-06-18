@@ -30,12 +30,17 @@ final class WorkoutViewModel: ObservableObject {
     let hrm = HeartRateManager()
     let loc = LocationTracker()
 
+    /// History store, injected from the app, used for auto-save on disconnect.
+    var store: WorkoutStore?
+
     private var timer: Timer?
     private var startDate: Date?
     private var accumulated: TimeInterval = 0
     private var lastHRDate: Date?
     private var hrSum = 0
     private var hrCount = 0
+    private var sessionSaved = false
+    private var disconnectWork: DispatchWorkItem?
 
     var avgBpm: Int { hrCount > 0 ? hrSum / hrCount : 0 }
 
@@ -47,6 +52,46 @@ final class WorkoutViewModel: ObservableObject {
 
     init() {
         hrm.onReading = { [weak self] bpm in self?.ingest(bpm: bpm) }
+        hrm.onDisconnect = { [weak self] in self?.scheduleAutoSave() }
+        hrm.onReconnect = { [weak self] in self?.cancelAutoSave() }
+    }
+
+    // MARK: - Auto-save (never lose a workout)
+
+    /// Strap dropped: if a real workout is running, save it after a short grace
+    /// period (in case it auto-reconnects). Cancelled if it reconnects in time.
+    private func scheduleAutoSave() {
+        guard active else { return }
+        disconnectWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.autoSaveIfNeeded() }
+        disconnectWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 25, execute: work)
+    }
+
+    private func cancelAutoSave() {
+        disconnectWork?.cancel()
+        disconnectWork = nil
+    }
+
+    /// Save the current session to history once (if it's substantial), then pause.
+    @discardableResult
+    func autoSaveIfNeeded() -> Bool {
+        guard !sessionSaved, duration >= 60, let store = store else { return false }
+        let rec = makeRecord()
+        store.add(rec)
+        sessionSaved = true
+        if active { pause() }
+        notifyAutoSaved(rec.duration)
+        return true
+    }
+
+    private func notifyAutoSaved(_ dur: TimeInterval) {
+        let c = UNMutableNotificationContent()
+        c.title = "Workout auto-saved"
+        c.body = "Strap disconnected — your \(WorkoutViewModel.clock(dur)) workout was saved to Progress."
+        c.sound = .default
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil))
     }
 
     /// Apply persisted settings and recompute the alert band.
@@ -88,10 +133,15 @@ final class WorkoutViewModel: ObservableObject {
     // MARK: - Session control
 
     func connect() { hrm.startScanning() }
-    func disconnectStrap() { hrm.disconnect() }
+    func disconnectStrap() {
+        cancelAutoSave()
+        autoSaveIfNeeded()      // user took the strap off — save what they did
+        hrm.disconnect()
+    }
 
     func start() {
         active = true
+        sessionSaved = false
         startDate = Date().addingTimeInterval(-accumulated)
         lastHRDate = Date()
         loc.start()
@@ -116,6 +166,8 @@ final class WorkoutViewModel: ObservableObject {
         peakBpm = 0
         hrSum = 0
         hrCount = 0
+        sessionSaved = false
+        cancelAutoSave()
         startDate = nil
         lastHRDate = nil
         loc.reset()

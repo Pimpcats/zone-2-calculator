@@ -21,6 +21,10 @@ final class HeartRateManager: NSObject, ObservableObject {
 
     /// Called on every heart-rate reading (used by the workout view model).
     var onReading: ((Int) -> Void)?
+    /// Called when the strap drops the connection (may auto-reconnect after).
+    var onDisconnect: (() -> Void)?
+    /// Called when the strap (re)connects.
+    var onReconnect: (() -> Void)?
 
     private var central: CBCentralManager!
     private var peripheral: CBPeripheral?
@@ -148,6 +152,7 @@ extension HeartRateManager: CBCentralManagerDelegate {
         DispatchQueue.main.async {
             self.connected = true
             self.statusText = "Connected to \(peripheral.name ?? "strap")"
+            self.onReconnect?()
         }
         peripheral.discoverServices([hrService])
     }
@@ -157,6 +162,7 @@ extension HeartRateManager: CBCentralManagerDelegate {
             self.connected = false
             self.bpm = nil
             self.statusText = "Strap disconnected — retrying…"
+            self.onDisconnect?()
         }
         central.connect(peripheral, options: nil)
     }

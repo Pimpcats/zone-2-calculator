@@ -1,6 +1,17 @@
 import SwiftUI
 import UserNotifications
 
+// MARK: - App version info (auto-set by CI to 1.0.<build#>)
+
+enum AppInfo {
+    static var version: String {
+        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "1.0"
+    }
+    static var build: String {
+        (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "0"
+    }
+}
+
 // MARK: - Root (tabs + settings source of truth)
 
 struct ContentView: View {
@@ -34,7 +45,7 @@ struct ContentView: View {
         }
         .tint(.red)
         .preferredColorScheme(.dark)
-        .onAppear { applySettings(); requestNotifications(); vm.loc.requestAuthorization() }
+        .onAppear { vm.store = store; applySettings(); requestNotifications(); vm.loc.requestAuthorization() }
         .onChange(of: age) { _ in applySettings() }
         .onChange(of: isMale) { _ in applySettings() }
         .onChange(of: weightKg) { _ in applySettings() }
@@ -105,7 +116,10 @@ struct WorkoutView: View {
         HStack {
             Image(systemName: "heart.fill").foregroundColor(.red)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Workout").font(.headline.bold())
+                HStack(spacing: 6) {
+                    Text("Workout").font(.headline.bold())
+                    Text("v\(AppInfo.version)").font(.caption2).foregroundColor(.secondary)
+                }
                 Text(vm.connected ? vm.statusText : "Strap not connected")
                     .font(.caption2)
                     .foregroundColor(vm.connected ? .green : .secondary)
@@ -450,6 +464,14 @@ struct SettingsView: View {
                     Text("Alert band")
                 } footer: {
                     Text("With Max HR \(vm.mhr): you'll be alerted if you drop below \(vm.floorBpm) bpm (Zone \(lowZone) floor) or rise above \(vm.ceilingBpm) bpm (Zone \(highZone) ceiling).")
+                }
+
+                Section("About") {
+                    HStack {
+                        Text("Version").foregroundColor(.secondary)
+                        Spacer()
+                        Text("\(AppInfo.version) (build \(AppInfo.build))").bold().monospacedDigit()
+                    }
                 }
 
                 Section {
