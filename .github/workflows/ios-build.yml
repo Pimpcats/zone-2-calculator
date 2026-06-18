@@ -8,6 +8,9 @@ on:
       - '.github/workflows/ios-build.yml'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: macos-15
@@ -17,6 +20,9 @@ jobs:
 
       - name: Show Xcode version
         run: xcodebuild -version
+
+      - name: Set version
+        run: echo "VERSION=1.0.${{ github.run_number }}" >> "$GITHUB_ENV"
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -35,6 +41,8 @@ jobs:
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath build \
+            MARKETING_VERSION="${VERSION}" \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -45,15 +53,77 @@ jobs:
         run: |
           APP_PATH=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -1)
           echo "App: $APP_PATH"
-          rm -rf Payload ZoneAlert-unsigned.ipa
+          rm -rf Payload ZoneAlert.ipa
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/
-          zip -qry ZoneAlert-unsigned.ipa Payload
-          ls -la ZoneAlert-unsigned.ipa
+          zip -qry ZoneAlert.ipa Payload
+          ls -la ZoneAlert.ipa
+
+      - name: Generate AltStore source feed (apps.json)
+        working-directory: ios
+        run: |
+          SIZE=$(stat -f%z ZoneAlert.ipa)
+          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          SIZE="$SIZE" DATE="$DATE" python3 - <<'PY'
+          import json, os
+          version = os.environ["VERSION"]
+          size = int(os.environ["SIZE"])
+          date = os.environ["DATE"]
+          base = "https://github.com/Pimpcats/zone-2-calculator/releases/download/latest"
+          icon = "https://raw.githubusercontent.com/Pimpcats/zone-2-calculator/main/ios/ZoneAlert/Assets.xcassets/AppIcon.appiconset/icon-1024.png"
+          desc = ("Pairs with your Polar H9 over Bluetooth and alerts you (buzz + banner) "
+                  "when your heart rate drops below your Zone 2 floor or rises above your "
+                  "Zone 3 ceiling — even with the screen locked. Includes a live workout "
+                  "dashboard, daily/weekly progress, and a VO2 Max test.")
+          app = {
+            "name": "Zone Alert",
+            "bundleIdentifier": "com.pimpcats.zonealert",
+            "developerName": "Pimpcats",
+            "subtitle": "Heart-rate zone alerts for your Polar strap",
+            "localizedDescription": desc,
+            "iconURL": icon,
+            "tintColor": "FF4146",
+            "category": "healthcare",
+            "screenshotURLs": [],
+            "version": version,
+            "versionDate": date,
+            "downloadURL": f"{base}/ZoneAlert.ipa",
+            "size": size,
+            "versions": [{
+              "version": version,
+              "date": date,
+              "localizedDescription": "Latest build.",
+              "downloadURL": f"{base}/ZoneAlert.ipa",
+              "size": size,
+              "minOSVersion": "16.0"
+            }]
+          }
+          source = {
+            "name": "Zone Alert Updates",
+            "identifier": "com.pimpcats.zonealert.source",
+            "apps": [app],
+            "news": []
+          }
+          with open("apps.json", "w") as f:
+            json.dump(source, f, indent=2)
+          print("wrote apps.json version", version, "size", size)
+          PY
+          cat apps.json
 
       - name: Upload .ipa artifact
         uses: actions/upload-artifact@v4
         with:
           name: ZoneAlert-unsigned-ipa
-          path: ios/ZoneAlert-unsigned.ipa
+          path: ios/ZoneAlert.ipa
           if-no-files-found: error
+
+      - name: Publish to rolling 'latest' release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest Zone Alert build
+          body: "Auto-published build ${{ env.VERSION }}. Add the AltStore source to get one-tap updates (see ios/README.md)."
+          files: |
+            ios/ZoneAlert.ipa
+            ios/apps.json
+          fail_on_unmatched_files: true

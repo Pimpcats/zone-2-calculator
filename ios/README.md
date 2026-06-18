@@ -46,6 +46,18 @@ free** on your phone with AltStore using your ordinary Apple ID.
 > Prefer a one-shot install? **Sideloadly** (<https://sideloadly.io>) installs the same
 > `.ipa` with a free Apple ID, but you refresh manually every 7 days.
 
+### One-tap updates over Wi-Fi (AltStore Source) ⭐
+Every push to `main` auto-builds a new `.ipa`, publishes it to the repo's rolling
+**`latest`** GitHub Release, and updates an AltStore **source feed**. Add the source once
+and future updates are a single tap in AltStore — no cable:
+
+1. In **AltStore** on your iPhone → **Browse** tab → **+** (top-left) → paste:
+   `https://github.com/Pimpcats/zone-2-calculator/releases/download/latest/apps.json`
+2. Open **Zone Alert** from that source and install it (replaces a Sideloadly copy as long
+   as you use the **same Apple ID**; otherwise delete the old copy first).
+3. After that, whenever a new build ships, AltStore shows an **Update** button — tap it.
+   (Your PC running AltServer must be reachable on Wi-Fi for the 7-day re-sign, as usual.)
+
 ### Alternative paths
 - **Have a Mac?** Run `xcodegen generate` in `ios/`, open `ZoneAlert.xcodeproj`, set your
   free Apple ID team, and run on your device (7-day signing).

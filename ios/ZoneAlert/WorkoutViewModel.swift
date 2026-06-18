@@ -34,6 +34,16 @@ final class WorkoutViewModel: ObservableObject {
     private var startDate: Date?
     private var accumulated: TimeInterval = 0
     private var lastHRDate: Date?
+    private var hrSum = 0
+    private var hrCount = 0
+
+    var avgBpm: Int { hrCount > 0 ? hrSum / hrCount : 0 }
+
+    /// Snapshot of the current session for saving to history.
+    func makeRecord() -> WorkoutRecord {
+        WorkoutRecord(date: Date(), duration: duration, distanceMiles: distanceMiles,
+                      calories: calories, avgBpm: avgBpm, peakBpm: peakBpm, timeInZone: timeInZone)
+    }
 
     init() {
         hrm.onReading = { [weak self] bpm in self?.ingest(bpm: bpm) }
@@ -104,6 +114,8 @@ final class WorkoutViewModel: ObservableObject {
         timeInZone = Array(repeating: 0, count: 6)
         hrHistory = []
         peakBpm = 0
+        hrSum = 0
+        hrCount = 0
         startDate = nil
         lastHRDate = nil
         loc.reset()
@@ -175,6 +187,8 @@ final class WorkoutViewModel: ObservableObject {
         }
         lastHRDate = now
         timeInZone[z] += dt
+        hrSum += value
+        hrCount += 1
         addCalories(bpm: value, dt: dt)
         hrHistory.append(value)
         if hrHistory.count > 600 { hrHistory.removeFirst() }
