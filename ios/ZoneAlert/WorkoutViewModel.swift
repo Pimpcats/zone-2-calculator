@@ -36,6 +36,18 @@ final class WorkoutViewModel: ObservableObject {
     private(set) var mhrOverride: Int? = nil   // measured Max HR (from VO2 test), if locked in
     private(set) var manualFloor: Int? = nil   // direct bpm floor (manual band mode)
     private(set) var manualCeiling: Int? = nil // direct bpm ceiling (manual band mode)
+    private(set) var useHRR: Bool = false      // Heart-Rate Reserve (adaptive) zone math
+
+    // OwnZone-style HRV warm-up test
+    @Published var ownzoneTesting = false
+    @Published var ownzoneRemaining = 0
+    @Published var ownzoneRMSSD: Double = 0      // current HRV (ms)
+    @Published var ownzoneBaseline: Double = 0   // highest HRV seen (easy effort)
+    @Published var ownzoneThresholdHR = 0        // detected aerobic threshold HR
+    private var ownzoneTimer: Timer?
+    private var rrBuffer: [Double] = []
+    private var ownzoneBelowSince: Date?
+    private let ownzoneLength = 300
 
     let hrm = HeartRateManager()
     let loc = LocationTracker()
@@ -106,7 +118,8 @@ final class WorkoutViewModel: ObservableObject {
 
     /// Apply persisted settings and recompute the alert band.
     func apply(age: Int, isMale: Bool, weightKg: Double, restingHR: Int,
-               bandZone: Int, mhrOverride: Int?, manualFloor: Int?, manualCeiling: Int?) {
+               bandZone: Int, mhrOverride: Int?, manualFloor: Int?, manualCeiling: Int?,
+               useHRR: Bool) {
         self.age = age
         self.isMale = isMale
         self.weightKg = weightKg
@@ -115,6 +128,7 @@ final class WorkoutViewModel: ObservableObject {
         self.mhrOverride = mhrOverride
         self.manualFloor = manualFloor
         self.manualCeiling = manualCeiling
+        self.useHRR = useHRR
         hrm.floorBpm = floorBpm
         hrm.ceilingBpm = ceilingBpm
         objectWillChange.send()
@@ -124,8 +138,16 @@ final class WorkoutViewModel: ObservableObject {
     var mhr: Int { mhrOverride ?? Zones.mhr(age: age) }
     var usingMeasuredMax: Bool { mhrOverride != nil }
     var usingManualBand: Bool { manualFloor != nil || manualCeiling != nil }
-    var floorBpm: Int { manualFloor ?? Zones.lowerBpm(zone: bandZone, mhr: mhr) }
-    var ceilingBpm: Int { manualCeiling ?? Zones.upperBpm(zone: bandZone, mhr: mhr) }
+    var floorBpm: Int {
+        if let m = manualFloor { return m }
+        return useHRR ? Zones.lowerBpmHRR(zone: bandZone, mhr: mhr, rest: restingHR)
+                      : Zones.lowerBpm(zone: bandZone, mhr: mhr)
+    }
+    var ceilingBpm: Int {
+        if let m = manualCeiling { return m }
+        return useHRR ? Zones.upperBpmHRR(zone: bandZone, mhr: mhr, rest: restingHR)
+                      : Zones.upperBpm(zone: bandZone, mhr: mhr)
+    }
 
     var distanceMiles: Double { loc.distanceMeters / 1609.344 }
     var paceSecPerMile: Double? {
@@ -214,6 +236,72 @@ final class WorkoutViewModel: ObservableObject {
         if restingRemaining <= 0 {
             restingResult = restingLow
             cancelRestingTest()
+        }
+    }
+
+    // MARK: - OwnZone-style HRV warm-up (aerobic-threshold detection)
+
+    func startOwnzoneTest() {
+        ownzoneTesting = true
+        ownzoneRemaining = ownzoneLength
+        ownzoneRMSSD = 0
+        ownzoneBaseline = 0
+        ownzoneThresholdHR = 0
+        rrBuffer = []
+        ownzoneBelowSince = nil
+        hrm.onRR = { [weak self] rrs in self?.ingestRR(rrs) }
+        ownzoneTimer?.invalidate()
+        let t = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in self?.ownzoneTick() }
+        RunLoop.main.add(t, forMode: .common)
+        ownzoneTimer = t
+    }
+
+    func cancelOwnzoneTest() {
+        ownzoneTesting = false
+        ownzoneTimer?.invalidate()
+        ownzoneTimer = nil
+        hrm.onRR = nil
+    }
+
+    private func ownzoneTick() {
+        guard ownzoneTesting else { return }
+        ownzoneRemaining -= 1
+        if ownzoneRemaining <= 0 {
+            if ownzoneThresholdHR == 0, let b = bpm { ownzoneThresholdHR = b }
+            cancelOwnzoneTest()
+        }
+    }
+
+    /// Feed R-R intervals, track RMSSD, and detect where HRV collapses (≈ aerobic threshold).
+    private func ingestRR(_ rrs: [Double]) {
+        guard ownzoneTesting else { return }
+        for rr in rrs where rr > 300 && rr < 2000 { rrBuffer.append(rr) }
+        if rrBuffer.count > 40 { rrBuffer.removeFirst(rrBuffer.count - 40) }
+        guard rrBuffer.count >= 8 else { return }
+
+        var sum = 0.0, n = 0
+        for i in 1..<rrBuffer.count {
+            let d = rrBuffer[i] - rrBuffer[i - 1]
+            sum += d * d; n += 1
+        }
+        let rmssd = n > 0 ? (sum / Double(n)).squareRoot() : 0
+        ownzoneRMSSD = rmssd
+        if rmssd > ownzoneBaseline { ownzoneBaseline = rmssd }
+
+        // Threshold = HRV stays collapsed (low) for ~8s after a high-HRV baseline.
+        if ownzoneThresholdHR == 0 {
+            let collapsed = rmssd < max(12.0, ownzoneBaseline * 0.2)
+            if collapsed && ownzoneBaseline > 20 {
+                if let since = ownzoneBelowSince {
+                    if Date().timeIntervalSince(since) >= 8, let b = bpm, b > 0 {
+                        ownzoneThresholdHR = b
+                    }
+                } else {
+                    ownzoneBelowSince = Date()
+                }
+            } else {
+                ownzoneBelowSince = nil
+            }
         }
     }
 

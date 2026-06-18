@@ -24,6 +24,9 @@ final class HeartRateManager: NSObject, ObservableObject {
 
     /// Called on every heart-rate reading (used by the workout view model).
     var onReading: ((Int) -> Void)?
+    /// Called with any R-R intervals (in milliseconds) included in a reading — used
+    /// for HRV / OwnZone-style aerobic-threshold detection.
+    var onRR: (([Double]) -> Void)?
     /// Called when the strap drops the connection (may auto-reconnect after).
     var onDisconnect: (() -> Void)?
     /// Called when the strap (re)connects.
@@ -242,11 +245,23 @@ extension HeartRateManager: CBPeripheralDelegate {
               let data = characteristic.value, data.count >= 2 else { return }
         let bytes = [UInt8](data)
         let flags = bytes[0]
+        var idx = 1
         let value: Int
         if flags & 0x01 == 0 {
-            value = Int(bytes[1])
+            value = Int(bytes[idx]); idx += 1
         } else {
-            value = Int(bytes[1]) | (Int(bytes[2]) << 8)
+            value = Int(bytes[idx]) | (Int(bytes[idx + 1]) << 8); idx += 2
+        }
+        if flags & 0x08 != 0 { idx += 2 }   // skip energy-expended field if present
+        // R-R intervals (uint16 LE, units of 1/1024 s) when bit 4 is set
+        if flags & 0x10 != 0 {
+            var rrs: [Double] = []
+            while idx + 1 < bytes.count {
+                let raw = Int(bytes[idx]) | (Int(bytes[idx + 1]) << 8)
+                rrs.append(Double(raw) / 1024.0 * 1000.0)   // → milliseconds
+                idx += 2
+            }
+            if !rrs.isEmpty { let out = rrs; DispatchQueue.main.async { self.onRR?(out) } }
         }
         handle(bpm: value)
     }

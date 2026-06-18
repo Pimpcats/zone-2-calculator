@@ -44,4 +44,15 @@ enum Zones {
         guard n >= 1, n <= 5 else { return mhr }
         return Int(Double(mhr) * all[n - 1].high)
     }
+
+    /// Heart-Rate Reserve (Karvonen) bounds: rest + intensity% × (mhr − rest).
+    /// These shift as resting HR changes day to day, without altering max HR.
+    static func lowerBpmHRR(zone n: Int, mhr: Int, rest: Int) -> Int {
+        guard n >= 1, n <= 5, mhr > rest else { return lowerBpm(zone: n, mhr: mhr) }
+        return rest + Int(Double(mhr - rest) * all[n - 1].low)
+    }
+    static func upperBpmHRR(zone n: Int, mhr: Int, rest: Int) -> Int {
+        guard n >= 1, n <= 5, mhr > rest else { return upperBpm(zone: n, mhr: mhr) }
+        return rest + Int(Double(mhr - rest) * all[n - 1].high)
+    }
 }

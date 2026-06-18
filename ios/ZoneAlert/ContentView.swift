@@ -27,6 +27,7 @@ struct ContentView: View {
     @AppStorage("customBand") private var customBand: Bool = false
     @AppStorage("floorBpmManual") private var floorBpmManual: Int = 114
     @AppStorage("ceilingBpmManual") private var ceilingBpmManual: Int = 133
+    @AppStorage("useHRR") private var useHRR: Bool = false
     @AppStorage("useMeasuredMax") private var useMeasuredMax: Bool = false
     @AppStorage("measuredMax") private var measuredMax: Int = 0
 
@@ -37,13 +38,16 @@ struct ContentView: View {
             CalculatorView(vm: vm)
                 .tabItem { Label("Zones", systemImage: "list.bullet.rectangle") }
             VO2MaxView(vm: vm, restingHR: $restingHR,
-                       useMeasuredMax: $useMeasuredMax, measuredMax: $measuredMax)
+                       useMeasuredMax: $useMeasuredMax, measuredMax: $measuredMax,
+                       customBand: $customBand, floorBpmManual: $floorBpmManual,
+                       ceilingBpmManual: $ceilingBpmManual)
                 .tabItem { Label("VO2 Max", systemImage: "lungs.fill") }
             ProgressTabView(store: store)
                 .tabItem { Label("Progress", systemImage: "chart.bar.fill") }
             SettingsView(vm: vm, hrm: vm.hrm, age: $age, isMale: $isMale, weightLbs: $weightLbs,
                          restingHR: $restingHR, bandZone: $bandZone, customBand: $customBand,
                          floorBpmManual: $floorBpmManual, ceilingBpmManual: $ceilingBpmManual,
+                         useHRR: $useHRR,
                          useMeasuredMax: $useMeasuredMax, measuredMax: $measuredMax)
                 .tabItem { Label("Settings", systemImage: "gearshape.fill") }
         }
@@ -64,6 +68,7 @@ struct ContentView: View {
         }
         .onChange(of: floorBpmManual) { _ in applySettings() }
         .onChange(of: ceilingBpmManual) { _ in applySettings() }
+        .onChange(of: useHRR) { _ in applySettings() }
         .onChange(of: useMeasuredMax) { _ in applySettings() }
         .onChange(of: measuredMax) { _ in applySettings() }
     }
@@ -73,7 +78,8 @@ struct ContentView: View {
         let mFloor = customBand ? floorBpmManual : nil
         let mCeil = customBand ? ceilingBpmManual : nil
         vm.apply(age: age, isMale: isMale, weightKg: weightLbs * 0.453592, restingHR: restingHR,
-                 bandZone: bandZone, mhrOverride: override, manualFloor: mFloor, manualCeiling: mCeil)
+                 bandZone: bandZone, mhrOverride: override, manualFloor: mFloor, manualCeiling: mCeil,
+                 useHRR: useHRR)
     }
 
     private func requestNotifications() {
@@ -259,6 +265,9 @@ struct VO2MaxView: View {
     @Binding var restingHR: Int
     @Binding var useMeasuredMax: Bool
     @Binding var measuredMax: Int
+    @Binding var customBand: Bool
+    @Binding var floorBpmManual: Int
+    @Binding var ceilingBpmManual: Int
 
     private var hrMax: Int { vm.peakBpm > 0 ? vm.peakBpm : vm.mhr }
     private var vo2: Double { vm.vo2maxEstimate(usingMax: hrMax) }
@@ -274,18 +283,87 @@ struct VO2MaxView: View {
                     Picker("", selection: $mode) {
                         Text("Resting").tag(0)
                         Text("Max Test").tag(1)
-                        Text("Guide").tag(2)
+                        Text("OwnZone").tag(2)
+                        Text("Guide").tag(3)
                     }
                     .pickerStyle(.segmented)
 
                     switch mode {
                     case 0: restingContent
                     case 1: testContent
+                    case 2: ownzoneContent
                     default: guideContent
                     }
                 }
                 .padding(18)
             }
+        }
+        // Resting test finished → adopt it as your resting HR (adaptive Zone 2).
+        .onChange(of: vm.restingResult) { v in if v > 0 { restingHR = v } }
+    }
+
+    private var ownzoneContent: some View {
+        VStack(spacing: 18) {
+            Text("OwnZone (HRV)")
+                .font(.title2.bold()).frame(maxWidth: .infinity, alignment: .leading)
+
+            Text("Experimental. Warm up gradually over 5 minutes — easy walk → brisk → light jog. The app reads your heart-rate variability and finds where it collapses: your aerobic threshold, i.e. the top of Zone 2 for today.")
+                .font(.footnote).foregroundColor(.secondary)
+
+            HStack(spacing: 14) {
+                bigStat(title: "Heart rate", value: vm.bpm.map(String.init) ?? "--",
+                        unit: "bpm", color: Color(red: 0.30, green: 0.66, blue: 1.0))
+                bigStat(title: "HRV (RMSSD)",
+                        value: vm.ownzoneRMSSD > 0 ? String(format: "%.0f", vm.ownzoneRMSSD) : "--",
+                        unit: "ms", color: .green)
+            }
+
+            if vm.ownzoneTesting {
+                VStack(spacing: 4) {
+                    Text("Time remaining").font(.caption).foregroundColor(.secondary)
+                    Text(WorkoutViewModel.clock(TimeInterval(vm.ownzoneRemaining)))
+                        .font(.system(size: 40, weight: .bold, design: .rounded)).monospacedDigit()
+                    ProgressView(value: Double(300 - vm.ownzoneRemaining), total: 300).tint(.red)
+                    if vm.ownzoneThresholdHR > 0 {
+                        Text("Threshold detected: \(vm.ownzoneThresholdHR) bpm")
+                            .font(.subheadline.bold()).foregroundColor(.green)
+                    } else {
+                        Text("Keep ramping up the effort…").font(.caption).foregroundColor(.secondary)
+                    }
+                }
+                Button(role: .destructive) { vm.cancelOwnzoneTest() } label: {
+                    Label("Stop", systemImage: "stop.circle").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            } else {
+                Button { vm.startOwnzoneTest() } label: {
+                    Label(vm.connected ? "Start OwnZone test" : "Connect strap to start",
+                          systemImage: "play.fill").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent).tint(.red).disabled(!vm.connected)
+
+                if vm.ownzoneThresholdHR > 0 {
+                    VStack(spacing: 8) {
+                        Text("Aerobic threshold ≈ \(vm.ownzoneThresholdHR) bpm")
+                            .font(.headline).foregroundColor(.green)
+                        Button {
+                            let top = vm.ownzoneThresholdHR
+                            ceilingBpmManual = top
+                            floorBpmManual = max(60, top - 15)
+                            customBand = true
+                        } label: {
+                            Label("Use as today's Zone 2 (\(max(60, vm.ownzoneThresholdHR - 15))–\(vm.ownzoneThresholdHR))",
+                                  systemImage: "lock.fill").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent).tint(.green)
+                    }
+                }
+            }
+
+            connectionControls
+
+            Text("Needs a strap that sends R-R data (your Polar H9 does). This is an estimate of Polar's OwnZone method, not a medical measurement.")
+                .font(.caption2).foregroundColor(.secondary)
         }
     }
 
@@ -529,6 +607,7 @@ struct SettingsView: View {
     @Binding var customBand: Bool
     @Binding var floorBpmManual: Int
     @Binding var ceilingBpmManual: Int
+    @Binding var useHRR: Bool
     @Binding var useMeasuredMax: Bool
     @Binding var measuredMax: Int
 
@@ -544,6 +623,16 @@ struct SettingsView: View {
                 .frame(width: 72)
             Text(unit).foregroundColor(.secondary)
         }
+    }
+
+    private var bandFooter: String {
+        if customBand {
+            return "Alerts if you drop below \(vm.floorBpm) or rise above \(vm.ceilingBpm) bpm."
+        }
+        if useHRR {
+            return "Heart-Rate Reserve (adaptive): Zone \(bandZone) = \(vm.floorBpm)–\(vm.ceilingBpm) bpm, from Max HR \(vm.mhr) and resting HR \(vm.restingHR). It nudges automatically as your resting HR changes — run the Resting test to update it."
+        }
+        return "Stay in Zone \(bandZone): with Max HR \(vm.mhr) that's \(vm.floorBpm)–\(vm.ceilingBpm) bpm. You'll be alerted whenever you leave that range."
     }
 
     var body: some View {
@@ -588,13 +677,15 @@ struct SettingsView: View {
                         Picker("Stay in zone", selection: $bandZone) {
                             ForEach(Zones.all) { z in Text("Zone \(z.id) · \(z.name)").tag(z.id) }
                         }
+                        Picker("Zone math", selection: $useHRR) {
+                            Text("% of Max HR").tag(false)
+                            Text("Heart-Rate Reserve").tag(true)
+                        }
                     }
                 } header: {
                     Text("Alert band")
                 } footer: {
-                    Text(customBand
-                         ? "Alerts if you drop below \(vm.floorBpm) or rise above \(vm.ceilingBpm) bpm."
-                         : "Stay in Zone \(bandZone): with Max HR \(vm.mhr) that's \(vm.floorBpm)–\(vm.ceilingBpm) bpm. You'll be alerted whenever you leave that range.")
+                    Text(bandFooter)
                 }
 
                 Section {
