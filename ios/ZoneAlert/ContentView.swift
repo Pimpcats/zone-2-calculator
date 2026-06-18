@@ -283,7 +283,7 @@ struct VO2MaxView: View {
                     Picker("", selection: $mode) {
                         Text("Resting").tag(0)
                         Text("Max Test").tag(1)
-                        Text("OwnZone").tag(2)
+                        Text("Threshold").tag(2)
                         Text("Guide").tag(3)
                     }
                     .pickerStyle(.segmented)
@@ -304,7 +304,7 @@ struct VO2MaxView: View {
 
     private var ownzoneContent: some View {
         VStack(spacing: 18) {
-            Text("OwnZone (HRV)")
+            Text("Adaptive Threshold (HRV)")
                 .font(.title2.bold()).frame(maxWidth: .infinity, alignment: .leading)
 
             Text("Experimental. Warm up gradually over 5 minutes — easy walk → brisk → light jog. The app reads your heart-rate variability and finds where it collapses: your aerobic threshold, i.e. the top of Zone 2 for today.")
@@ -337,7 +337,7 @@ struct VO2MaxView: View {
                 .buttonStyle(.bordered)
             } else {
                 Button { vm.startOwnzoneTest() } label: {
-                    Label(vm.connected ? "Start OwnZone test" : "Connect strap to start",
+                    Label(vm.connected ? "Start threshold test" : "Connect strap to start",
                           systemImage: "play.fill").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent).tint(.red).disabled(!vm.connected)
@@ -362,7 +362,7 @@ struct VO2MaxView: View {
 
             connectionControls
 
-            Text("Needs a strap that sends R-R data (your Polar H9 does). This is an estimate of Polar's OwnZone method, not a medical measurement.")
+            Text("Needs a strap that sends R-R (HRV) data — most Bluetooth chest straps do. This is an experimental fitness estimate of your aerobic threshold, not a medical measurement.")
                 .font(.caption2).foregroundColor(.secondary)
         }
     }
@@ -718,6 +718,15 @@ struct SettingsView: View {
                     Button { showCompat = true } label: {
                         Label("Scan for compatible sensors", systemImage: "dot.radiowaves.left.and.right")
                     }
+                    if hrm.demoMode {
+                        Button(role: .destructive) { hrm.stopDemo() } label: {
+                            Label("Stop demo", systemImage: "stop.circle")
+                        }
+                    } else {
+                        Button { hrm.startDemo() } label: {
+                            Label("Demo mode (no strap needed)", systemImage: "play.circle")
+                        }
+                    }
                 } header: {
                     Text("Heart rate strap")
                 } footer: {
@@ -743,6 +752,13 @@ struct SettingsView: View {
                         Spacer()
                         Text("\(AppInfo.version) (build \(AppInfo.build))").bold().monospacedDigit()
                     }
+                }
+
+                Section {
+                    Text("Zone Alert is a fitness training aid, not a medical device. It does not diagnose, treat, cure, or monitor any medical condition, and its heart-rate, VO₂, threshold, and calorie figures are estimates. Consult a physician before beginning intense exercise or relying on any reading. Stop exercising and seek help if you feel chest pain, dizziness, or faintness.")
+                        .font(.caption2).foregroundColor(.secondary)
+                } header: {
+                    Text("Health & safety")
                 }
 
                 Section {
@@ -880,7 +896,7 @@ struct ProgressTabView: View {
                                            points: store.series("resting"), color: .green)
                             }
                             if !store.series("ownzone").isEmpty {
-                                TrendChart(title: "Aerobic threshold (OwnZone)",
+                                TrendChart(title: "Aerobic threshold",
                                            points: store.series("ownzone"), color: .orange)
                             }
                         }

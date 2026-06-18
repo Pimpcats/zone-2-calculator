@@ -75,7 +75,7 @@ struct ReportView: View {
             ])
 
             trendSection("Resting HR trend", series: store.series("resting"), color: .green)
-            trendSection("Aerobic threshold (OwnZone) trend", series: store.series("ownzone"), color: accent)
+            trendSection("Aerobic threshold trend", series: store.series("ownzone"), color: accent)
 
             sectionTitle("Workouts (\(store.records.count) total)")
             workoutTable

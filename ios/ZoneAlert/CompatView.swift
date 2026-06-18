@@ -22,7 +22,7 @@ struct CompatView: View {
                 } header: {
                     Text("Nearby heart-rate sensors")
                 } footer: {
-                    Text("Any device listed here exposes the standard Bluetooth Heart Rate service, so it works with Zone Alert. Tap “Check R-R” to confirm HRV / OwnZone support (chest straps usually pass).")
+                    Text("Any device listed here exposes the standard Bluetooth Heart Rate service, so it works with Zone Alert. Tap “Check R-R” to confirm HRV support for the adaptive threshold features (chest straps usually pass).")
                 }
             }
             .navigationTitle("Compatibility")
@@ -42,8 +42,8 @@ struct CompatView: View {
                 Text(d.name).font(.callout.bold())
                 Text("❤️ Heart rate ✓").font(.caption).foregroundColor(.green)
                 if let rr = d.rrSupported {
-                    Text(rr ? "HRV / R-R ✓ — OwnZone supported"
-                            : "HRV / R-R ✗ — HR works, OwnZone won't")
+                    Text(rr ? "HRV / R-R ✓ — adaptive threshold supported"
+                            : "HRV / R-R ✗ — HR works, threshold features won't")
                         .font(.caption).foregroundColor(rr ? .green : .orange)
                 } else {
                     Text("Signal \(d.rssi) dBm").font(.caption2).foregroundColor(.secondary)

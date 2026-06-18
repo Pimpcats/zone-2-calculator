@@ -180,6 +180,49 @@ final class HeartRateManager: NSObject, ObservableObject {
         if scanMode == .compat { central.scanForPeripherals(withServices: [hrService], options: nil) }
     }
 
+    // MARK: - Demo mode (simulated sensor — works with no hardware)
+
+    @Published private(set) var demoMode = false
+    private var demoTimer: Timer?
+    private var demoStart = Date()
+
+    func startDemo() {
+        stopCompatScan()
+        demoMode = true
+        connected = true
+        bluetoothReady = true
+        deviceName = "Demo sensor"
+        statusText = "Demo sensor (simulated)"
+        demoStart = Date()
+        demoTimer?.invalidate()
+        let t = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in self?.demoTick() }
+        RunLoop.main.add(t, forMode: .common)
+        demoTimer = t
+    }
+
+    func stopDemo() {
+        demoMode = false
+        demoTimer?.invalidate()
+        demoTimer = nil
+        connected = false
+        bpm = nil
+        statusText = "Demo stopped"
+    }
+
+    private func demoTick() {
+        let elapsed = Date().timeIntervalSince(demoStart)
+        let base = 120.0 + 30.0 * sin(elapsed / 45.0)               // drift 90–150
+        let value = max(55, Int(base) + Int.random(in: -3...3))
+        // HRV shrinks as effort rises (so the threshold test can react)
+        let hrv = max(2.0, 55.0 * (1.0 - Double(value - 70) / 95.0))
+        let mean = 60000.0 / Double(value)
+        let rr = [mean + Double.random(in: -hrv...hrv), mean + Double.random(in: -hrv...hrv)]
+        onRR?(rr)
+        bpm = value
+        evaluate(value)
+        onReading?(value)
+    }
+
     func sendTestAlert() {
         notify(title: "🔔 Zone Alert test",
                body: "Alerts are working. You'll be buzzed if you drop below \(floorBpm) or go above \(ceilingBpm) bpm.")
