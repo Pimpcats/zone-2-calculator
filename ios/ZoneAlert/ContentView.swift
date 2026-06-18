@@ -702,6 +702,15 @@ struct SettingsView: View {
                     if hrm.connected, let n = hrm.deviceName {
                         Text("Connected to \(n)").font(.caption).foregroundColor(.green)
                     }
+                    if hrm.pinnedName != nil {
+                        if hrm.pinnedRRSupported {
+                            Label("Tested compatible · HR + HRV ✓", systemImage: "checkmark.seal.fill")
+                                .font(.caption).foregroundColor(.green)
+                        } else {
+                            Label("HR ✓ · HRV not confirmed yet", systemImage: "checkmark.circle")
+                                .font(.caption).foregroundColor(.secondary)
+                        }
+                    }
                     Button(role: .destructive) { hrm.forgetDevice() } label: {
                         Label("Forget / re-pair strap", systemImage: "xmark.circle")
                     }

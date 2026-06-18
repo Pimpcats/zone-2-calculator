@@ -25,6 +25,8 @@ final class HeartRateManager: NSObject, ObservableObject {
     /// The strap we're locked to. Once paired, we ignore every other HR device.
     @Published private(set) var pinnedID: String?
     @Published private(set) var pinnedName: String?
+    /// True once the pinned strap has been confirmed to send R-R (HRV) data.
+    @Published private(set) var pinnedRRSupported = false
 
     /// Alert band, in bpm. Set from the view model based on Max HR + chosen zones.
     var floorBpm: Int = 0          // never drop below this
@@ -60,6 +62,7 @@ final class HeartRateManager: NSObject, ObservableObject {
         super.init()
         pinnedID = UserDefaults.standard.string(forKey: "pinnedStrapID")
         pinnedName = UserDefaults.standard.string(forKey: "pinnedStrapName")
+        pinnedRRSupported = UserDefaults.standard.bool(forKey: "pinnedRRSupported")
         central = CBCentralManager(
             delegate: self,
             queue: nil,
@@ -71,8 +74,10 @@ final class HeartRateManager: NSObject, ObservableObject {
     func forgetDevice() {
         pinnedID = nil
         pinnedName = nil
+        pinnedRRSupported = false
         UserDefaults.standard.removeObject(forKey: "pinnedStrapID")
         UserDefaults.standard.removeObject(forKey: "pinnedStrapName")
+        UserDefaults.standard.removeObject(forKey: "pinnedRRSupported")
         if let p = peripheral { central.cancelPeripheralConnection(p) }
         peripheral = nil
         connected = false
@@ -165,6 +170,10 @@ final class HeartRateManager: NSObject, ObservableObject {
         if let i = compatDevices.firstIndex(where: { $0.id == id }) {
             compatDevices[i].rrSupported = rr
             compatDevices[i].testing = false
+        }
+        if pinnedID == id.uuidString {       // tested our own strap → record the badge
+            pinnedRRSupported = rr
+            UserDefaults.standard.set(rr, forKey: "pinnedRRSupported")
         }
         if let p = compatPeripherals[id] { central.cancelPeripheralConnection(p) }
         if testingID == id { testingID = nil }
@@ -328,6 +337,12 @@ extension HeartRateManager: CBPeripheralDelegate {
         if peripheral.identifier == testingID {
             if flags & 0x10 != 0 { finishTest(id: peripheral.identifier, rr: true) }
             return
+        }
+
+        // Passive confirmation: our pinned strap is sending R-R during normal use.
+        if flags & 0x10 != 0 && !pinnedRRSupported {
+            pinnedRRSupported = true
+            UserDefaults.standard.set(true, forKey: "pinnedRRSupported")
         }
 
         var idx = 1
