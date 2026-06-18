@@ -1,5 +1,6 @@
 import SwiftUI
 import UserNotifications
+import UIKit
 
 // MARK: - App version info (auto-set by CI to 1.0.<build#>)
 
@@ -20,7 +21,7 @@ struct ContentView: View {
 
     @AppStorage("age") private var age: Int = 40
     @AppStorage("isMale") private var isMale: Bool = true
-    @AppStorage("weightKg") private var weightKg: Double = 75
+    @AppStorage("weightLbs") private var weightLbs: Double = 165
     @AppStorage("restingHR") private var restingHR: Int = 60
     @AppStorage("lowZone") private var lowZone: Int = 2
     @AppStorage("highZone") private var highZone: Int = 3
@@ -38,7 +39,7 @@ struct ContentView: View {
                 .tabItem { Label("VO2 Max", systemImage: "lungs.fill") }
             ProgressTabView(store: store)
                 .tabItem { Label("Progress", systemImage: "chart.bar.fill") }
-            SettingsView(vm: vm, age: $age, isMale: $isMale, weightKg: $weightKg,
+            SettingsView(vm: vm, hrm: vm.hrm, age: $age, isMale: $isMale, weightLbs: $weightLbs,
                          restingHR: $restingHR, lowZone: $lowZone, highZone: $highZone,
                          useMeasuredMax: $useMeasuredMax, measuredMax: $measuredMax)
                 .tabItem { Label("Settings", systemImage: "gearshape.fill") }
@@ -48,7 +49,7 @@ struct ContentView: View {
         .onAppear { vm.store = store; applySettings(); requestNotifications(); vm.loc.requestAuthorization() }
         .onChange(of: age) { _ in applySettings() }
         .onChange(of: isMale) { _ in applySettings() }
-        .onChange(of: weightKg) { _ in applySettings() }
+        .onChange(of: weightLbs) { _ in applySettings() }
         .onChange(of: restingHR) { _ in applySettings() }
         .onChange(of: lowZone) { _ in applySettings() }
         .onChange(of: highZone) { _ in applySettings() }
@@ -58,7 +59,7 @@ struct ContentView: View {
 
     private func applySettings() {
         let override = (useMeasuredMax && measuredMax > 0) ? measuredMax : nil
-        vm.apply(age: age, isMale: isMale, weightKg: weightKg, restingHR: restingHR,
+        vm.apply(age: age, isMale: isMale, weightKg: weightLbs * 0.453592, restingHR: restingHR,
                  lowZone: lowZone, highZone: highZone, mhrOverride: override)
     }
 
@@ -417,9 +418,10 @@ struct VO2MaxView: View {
 
 struct SettingsView: View {
     @ObservedObject var vm: WorkoutViewModel
+    @ObservedObject var hrm: HeartRateManager
     @Binding var age: Int
     @Binding var isMale: Bool
-    @Binding var weightKg: Double
+    @Binding var weightLbs: Double
     @Binding var restingHR: Int
     @Binding var lowZone: Int
     @Binding var highZone: Int
@@ -428,22 +430,42 @@ struct SettingsView: View {
 
     @State private var showNotifDenied = false
 
+    private func intRow(_ label: String, value: Binding<Int>, unit: String) -> some View {
+        HStack {
+            Text(label)
+            Spacer()
+            TextField("", value: value, format: .number)
+                .keyboardType(.numberPad)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 72)
+            Text(unit).foregroundColor(.secondary)
+        }
+    }
+
     var body: some View {
         NavigationView {
             Form {
                 Section("You") {
-                    Stepper("Age: \(age)", value: $age, in: 10...100)
+                    intRow("Age", value: $age, unit: "yrs")
                     Picker("Sex", selection: $isMale) {
                         Text("Male").tag(true); Text("Female").tag(false)
                     }
-                    Stepper("Weight: \(Int(weightKg)) kg", value: $weightKg, in: 30...200)
-                    Stepper("Resting HR: \(restingHR) bpm", value: $restingHR, in: 30...110)
+                    HStack {
+                        Text("Weight")
+                        Spacer()
+                        TextField("", value: $weightLbs, format: .number.precision(.fractionLength(0)))
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 72)
+                        Text("lbs").foregroundColor(.secondary)
+                    }
+                    intRow("Resting HR", value: $restingHR, unit: "bpm")
                 }
 
                 Section {
                     Toggle("Use measured Max HR", isOn: $useMeasuredMax)
                     if useMeasuredMax {
-                        Stepper("Measured Max HR: \(measuredMax) bpm", value: $measuredMax, in: 120...220)
+                        intRow("Max HR", value: $measuredMax, unit: "bpm")
                     }
                 } header: {
                     Text("Max heart rate")
@@ -464,6 +486,26 @@ struct SettingsView: View {
                     Text("Alert band")
                 } footer: {
                     Text("With Max HR \(vm.mhr): you'll be alerted if you drop below \(vm.floorBpm) bpm (Zone \(lowZone) floor) or rise above \(vm.ceilingBpm) bpm (Zone \(highZone) ceiling).")
+                }
+
+                Section {
+                    HStack {
+                        Text("Paired strap").foregroundColor(.secondary)
+                        Spacer()
+                        Text(hrm.pinnedName ?? "Not paired yet")
+                            .bold().foregroundColor(hrm.pinnedName == nil ? .secondary : .primary)
+                    }
+                    if hrm.connected, let n = hrm.deviceName {
+                        Text("Connected to \(n)").font(.caption).foregroundColor(.green)
+                    }
+                    Button(role: .destructive) { hrm.forgetDevice() } label: {
+                        Label("Forget / re-pair strap", systemImage: "xmark.circle")
+                    }
+                    .disabled(hrm.pinnedID == nil)
+                } header: {
+                    Text("Heart rate strap")
+                } footer: {
+                    Text("Once paired, Zone Alert only ever connects to this exact strap and ignores every other heart-rate device nearby. Forget it to switch straps (pair the new one while only it is awake).")
                 }
 
                 Section("About") {
@@ -495,6 +537,16 @@ struct SettingsView: View {
                     Text("Your target band")
                 } footer: {
                     Text("Tip: you'll feel a buzz immediately. The banner/sound shows here and on your lock screen. If it says Notifications: Off, tap Test and choose Open Settings → turn on Allow Notifications.")
+                }
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        UIApplication.shared.sendAction(
+                            #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    }
                 }
             }
             .navigationTitle("Settings")
