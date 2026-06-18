@@ -44,7 +44,7 @@ struct ContentView: View {
                 .tabItem { Label("VO2 Max", systemImage: "lungs.fill") }
             ProgressTabView(store: store)
                 .tabItem { Label("Progress", systemImage: "chart.bar.fill") }
-            SettingsView(vm: vm, hrm: vm.hrm, age: $age, isMale: $isMale, weightLbs: $weightLbs,
+            SettingsView(vm: vm, hrm: vm.hrm, store: store, age: $age, isMale: $isMale, weightLbs: $weightLbs,
                          restingHR: $restingHR, bandZone: $bandZone, customBand: $customBand,
                          floorBpmManual: $floorBpmManual, ceilingBpmManual: $ceilingBpmManual,
                          useHRR: $useHRR,
@@ -599,6 +599,7 @@ struct VO2MaxView: View {
 struct SettingsView: View {
     @ObservedObject var vm: WorkoutViewModel
     @ObservedObject var hrm: HeartRateManager
+    @ObservedObject var store: WorkoutStore
     @Binding var age: Int
     @Binding var isMale: Bool
     @Binding var weightLbs: Double
@@ -612,6 +613,8 @@ struct SettingsView: View {
     @Binding var measuredMax: Int
 
     @State private var showNotifDenied = false
+    @State private var exportURL: URL?
+    @State private var showShare = false
 
     private func intRow(_ label: String, value: Binding<Int>, unit: String) -> some View {
         HStack {
@@ -708,6 +711,19 @@ struct SettingsView: View {
                     Text("Once paired, Zone Alert only ever connects to this exact strap and ignores every other heart-rate device nearby. Forget it to switch straps (pair the new one while only it is awake).")
                 }
 
+                Section {
+                    Button {
+                        exportURL = PDFExport.generate(vm: vm, store: store)
+                        if exportURL != nil { showShare = true }
+                    } label: {
+                        Label("Export PDF report", systemImage: "square.and.arrow.up")
+                    }
+                } header: {
+                    Text("Data")
+                } footer: {
+                    Text("Builds a clean PDF of your profile, zone band, resting-HR and threshold trends, and your workout log — then opens the share sheet so you can Save to Files or send it.")
+                }
+
                 Section("About") {
                     HStack {
                         Text("Version").foregroundColor(.secondary)
@@ -756,6 +772,9 @@ struct SettingsView: View {
                 Button("Cancel", role: .cancel) { }
             } message: {
                 Text("Notifications are turned off for Zone Alert, so zone alerts can't show. Open Settings → Notifications → allow them, then try the test again.")
+            }
+            .sheet(isPresented: $showShare) {
+                if let url = exportURL { ActivityView(items: [url]) }
             }
         }
     }

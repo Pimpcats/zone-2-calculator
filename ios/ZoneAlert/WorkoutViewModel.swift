@@ -376,7 +376,7 @@ final class WorkoutViewModel: ObservableObject {
         hrCount += 1
         addCalories(bpm: value, dt: dt)
         hrHistory.append(value)
-        if hrHistory.count > 600 { hrHistory.removeFirst() }
+        if hrHistory.count > 14400 { hrHistory.removeFirst() }   // ~4h at 1 Hz
     }
 
     /// HR-based calorie estimate (Keytel et al., 2005).

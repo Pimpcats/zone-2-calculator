@@ -40,39 +40,50 @@ struct ZoneGraphView: View {
     let history: [Int]
     let mhr: Int
     let bpm: Int?
+    private let spacing: CGFloat = 3   // horizontal points per sample
 
     var body: some View {
         GeometryReader { geo in
-            let w = geo.size.width
             let h = geo.size.height
-            ZStack(alignment: .topLeading) {
-                // Colored bands, Zone 5 (top) down to Zone 1 (bottom)
+            let bandH = h / 5
+            let contentW = max(geo.size.width, CGFloat(max(history.count, 1)) * spacing)
+            HStack(spacing: 4) {
+                // Fixed zone-number axis (stays put while the timeline scrolls)
                 VStack(spacing: 0) {
                     ForEach(Array((1...5).reversed()), id: \.self) { z in
-                        ZStack(alignment: .leading) {
-                            Zones.all[z - 1].color.opacity(0.85)
-                            Text("\(z)")
-                                .font(.caption.bold())
-                                .foregroundColor(.white)
-                                .padding(.leading, 6)
+                        Text("\(z)")
+                            .font(.caption2.bold())
+                            .foregroundColor(Zones.all[z - 1].color)
+                            .frame(width: 14, height: bandH)
+                    }
+                }
+                // Scroll WITHIN here to pan the whole workout; auto-follows the live edge
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        ZStack(alignment: .topLeading) {
+                            VStack(spacing: 0) {
+                                ForEach(Array((1...5).reversed()), id: \.self) { z in
+                                    Zones.all[z - 1].color.opacity(0.85)
+                                        .frame(width: contentW, height: bandH)
+                                }
+                            }
+                            hrPath(width: contentW, height: h)
+                                .stroke(Color.red, style: StrokeStyle(lineWidth: 2, lineJoin: .round))
+                            if let b = bpm, !history.isEmpty {
+                                Circle().fill(Color.red).frame(width: 7, height: 7)
+                                    .position(x: contentW - 3, y: yFor(b, h))
+                            }
+                            Color.clear.frame(width: 1, height: h)
+                                .position(x: contentW - 0.5, y: h / 2).id("liveEdge")
                         }
+                        .frame(width: contentW, height: h)
                     }
+                    .onChange(of: history.count) { _ in proxy.scrollTo("liveEdge", anchor: .trailing) }
+                    .onAppear { proxy.scrollTo("liveEdge", anchor: .trailing) }
                 }
-                // Live HR line
-                hrPath(width: w, height: h)
-                    .stroke(Color.red, style: StrokeStyle(lineWidth: 2, lineJoin: .round))
-                // Current BPM marker
-                if let b = bpm {
-                    let y = yFor(b, h)
-                    HStack(spacing: 4) {
-                        Text("\(b)").font(.caption.bold()).foregroundColor(.white)
-                        Image(systemName: "heart.fill").font(.caption2).foregroundColor(.red)
-                    }
-                    .position(x: w - 26, y: max(10, min(h - 10, y - 12)))
-                }
+                .clipShape(RoundedRectangle(cornerRadius: 12))
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
     private func yFor(_ bpm: Int, _ h: CGFloat) -> CGFloat {
@@ -85,11 +96,10 @@ struct ZoneGraphView: View {
 
     private func hrPath(width w: CGFloat, height h: CGFloat) -> Path {
         Path { p in
-            let pts = Array(history.suffix(150))
-            guard pts.count > 1 else { return }
-            let count = pts.count
-            for (i, bpm) in pts.enumerated() {
-                let x = w * CGFloat(i) / CGFloat(count - 1)
+            guard history.count > 1 else { return }
+            let n = history.count
+            for (i, bpm) in history.enumerated() {
+                let x = w * CGFloat(i) / CGFloat(n - 1)
                 let y = yFor(bpm, h)
                 if i == 0 { p.move(to: CGPoint(x: x, y: y)) }
                 else { p.addLine(to: CGPoint(x: x, y: y)) }
