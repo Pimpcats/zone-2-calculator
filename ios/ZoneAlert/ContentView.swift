@@ -888,6 +888,8 @@ struct ProgressTabView: View {
                         totalsCard(title: "This week", t: store.weekTotals)
                     }
 
+                    CalendarView(store: store)
+
                     weeklyChart
 
                     if !store.series("resting").isEmpty || !store.series("ownzone").isEmpty {

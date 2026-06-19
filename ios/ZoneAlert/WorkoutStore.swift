@@ -107,6 +107,25 @@ final class WorkoutStore: ObservableObject {
         return totals(since: start)
     }
 
+    // MARK: - Calendar lookups
+
+    func records(on day: Date) -> [WorkoutRecord] {
+        records.filter { Calendar.current.isDate($0.date, inSameDayAs: day) }
+    }
+    func measurements(on day: Date) -> [Measurement] {
+        measurements.filter { Calendar.current.isDate($0.date, inSameDayAs: day) }
+    }
+    func hasData(on day: Date) -> Bool {
+        !records(on: day).isEmpty || !measurements(on: day).isEmpty
+    }
+    func totals(on day: Date) -> ProgressTotals {
+        var t = ProgressTotals()
+        for r in records(on: day) {
+            t.count += 1; t.duration += r.duration; t.miles += r.distanceMiles; t.calories += r.calories
+        }
+        return t
+    }
+
     /// Duration (in minutes) for each of the last 7 days, oldest → newest.
     func last7DaysMinutes() -> [(label: String, minutes: Double)] {
         let cal = Calendar.current
