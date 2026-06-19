@@ -21,10 +21,20 @@ everything stays on your device. We do not collect, transmit, sell, or share you
 - No analytics, no advertising, no tracking, no third‑party SDKs.
 - We never sell or share your information with anyone.
 
+## Optional: Fitbit
+If you choose to connect Fitbit (Fitbit tab), the app talks to **Fitbit's servers** to
+log you in (via Apple's secure web sheet) and to fetch *your own* Fitbit data — steps,
+calories, resting heart rate, and sleep. Your Fitbit access token is stored only on your
+device. We never send your Zone Alert / heart-rate-strap data to Fitbit; the Fitbit data
+is kept **separate** from your on-device workout data and is only requested when you
+connect or finish a workout. You can disconnect at any time in the Fitbit tab. If you
+never connect Fitbit, the app makes no network connections at all.
+
 ## Data leaving your device
-The only time information leaves your device is when **you** explicitly tap
-**Export PDF report** and choose where to send or save it. That action, and its
-destination, are entirely under your control.
+Apart from the optional Fitbit connection above, the only time information leaves your
+device is when **you** explicitly tap **Export PDF report** (or **Export raw test data**)
+and choose where to send or save it. That action, and its destination, are entirely under
+your control.
 
 ## Notifications
 Zone alerts are **local notifications** generated on your device. No notification content

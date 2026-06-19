@@ -19,6 +19,7 @@ enum AppInfo {
 struct ContentView: View {
     @StateObject private var vm = WorkoutViewModel()
     @StateObject private var store = WorkoutStore()
+    @StateObject private var fitbit = FitbitService()
 
     @AppStorage("age") private var age: Int = 40
     @AppStorage("isMale") private var isMale: Bool = true
@@ -36,10 +37,8 @@ struct ContentView: View {
 
     var body: some View {
         TabView {
-            WorkoutView(vm: vm, store: store)
+            WorkoutView(vm: vm, store: store, fitbit: fitbit)
                 .tabItem { Label("Workout", systemImage: "figure.run") }
-            CalculatorView(vm: vm)
-                .tabItem { Label("Zones", systemImage: "list.bullet.rectangle") }
             VO2MaxView(vm: vm, restingHR: $restingHR,
                        useMeasuredMax: $useMeasuredMax, measuredMax: $measuredMax,
                        customBand: $customBand, floorBpmManual: $floorBpmManual,
@@ -47,6 +46,8 @@ struct ContentView: View {
                 .tabItem { Label("VO2 Max", systemImage: "lungs.fill") }
             ProgressTabView(store: store)
                 .tabItem { Label("Progress", systemImage: "chart.bar.fill") }
+            FitbitView(fitbit: fitbit)
+                .tabItem { Label("Fitbit", systemImage: "circle.hexagongrid.fill") }
             SettingsView(vm: vm, hrm: vm.hrm, store: store, age: $age, isMale: $isMale, weightLbs: $weightLbs,
                          restingHR: $restingHR, bandZone: $bandZone, customBand: $customBand,
                          floorBpmManual: $floorBpmManual, ceilingBpmManual: $ceilingBpmManual,
@@ -100,6 +101,7 @@ struct ContentView: View {
 struct WorkoutView: View {
     @ObservedObject var vm: WorkoutViewModel
     @ObservedObject var store: WorkoutStore
+    @ObservedObject var fitbit: FitbitService
     @State private var savedFlash = false
     @State private var graphTab = 0
     @Environment(\.requestReview) private var requestReview
@@ -163,6 +165,7 @@ struct WorkoutView: View {
                     let record = vm.makeRecord()
                     store.add(record)
                     if healthEnabled { vm.health.save(record) }
+                    if fitbit.connected { fitbit.sync() }   // pull fresh Fitbit data (kept separate)
                     vm.reset()
                     withAnimation { savedFlash = true }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
@@ -806,6 +809,7 @@ struct SettingsView: View {
     @State private var exportURL: URL?
     @State private var showShare = false
     @State private var showCompat = false
+    @State private var showZones = false
     @AppStorage("healthEnabled") private var healthEnabled = false
 
     private func intRow(_ label: String, value: Binding<Int>, unit: String) -> some View {
@@ -979,6 +983,9 @@ struct SettingsView: View {
                     } label: {
                         Label("Test background alert (lock screen in 6s)", systemImage: "lock.iphone")
                     }
+                    Button { showZones = true } label: {
+                        Label("View all heart-rate zones", systemImage: "list.bullet.rectangle")
+                    }
                 } header: {
                     Text("Your target band")
                 } footer: {
@@ -1008,6 +1015,9 @@ struct SettingsView: View {
             }
             .sheet(isPresented: $showCompat) {
                 CompatView(hrm: hrm)
+            }
+            .sheet(isPresented: $showZones) {
+                CalculatorView(vm: vm)
             }
         }
     }
