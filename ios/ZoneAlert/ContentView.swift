@@ -30,6 +30,7 @@ struct ContentView: View {
     @AppStorage("ceilingBpmManual") private var ceilingBpmManual: Int = 133
     @AppStorage("useHRR") private var useHRR: Bool = false
     @AppStorage("voiceEnabled") private var voiceEnabled: Bool = false
+    @AppStorage("liveBanner") private var liveBanner: Bool = false
     @AppStorage("useMeasuredMax") private var useMeasuredMax: Bool = true
     @AppStorage("measuredMax") private var measuredMax: Int = 190
 
@@ -49,7 +50,7 @@ struct ContentView: View {
             SettingsView(vm: vm, hrm: vm.hrm, store: store, age: $age, isMale: $isMale, weightLbs: $weightLbs,
                          restingHR: $restingHR, bandZone: $bandZone, customBand: $customBand,
                          floorBpmManual: $floorBpmManual, ceilingBpmManual: $ceilingBpmManual,
-                         useHRR: $useHRR, voiceEnabled: $voiceEnabled,
+                         useHRR: $useHRR, voiceEnabled: $voiceEnabled, liveBanner: $liveBanner,
                          useMeasuredMax: $useMeasuredMax, measuredMax: $measuredMax)
                 .tabItem { Label("Settings", systemImage: "gearshape.fill") }
         }
@@ -72,6 +73,7 @@ struct ContentView: View {
         .onChange(of: ceilingBpmManual) { _ in applySettings() }
         .onChange(of: useHRR) { _ in applySettings() }
         .onChange(of: voiceEnabled) { _ in applySettings() }
+        .onChange(of: liveBanner) { _ in applySettings() }
         .onChange(of: useMeasuredMax) { _ in applySettings() }
         .onChange(of: measuredMax) { _ in applySettings() }
     }
@@ -84,6 +86,8 @@ struct ContentView: View {
                  bandZone: bandZone, mhrOverride: override, manualFloor: mFloor, manualCeiling: mCeil,
                  useHRR: useHRR)
         vm.hrm.voiceEnabled = voiceEnabled
+        vm.liveBannerEnabled = liveBanner
+        vm.syncLiveActivity()
     }
 
     private func requestNotifications() {
@@ -288,6 +292,8 @@ struct VO2MaxView: View {
     @State private var mode = 1
     @AppStorage("vo2IntervalSec") private var vo2IntervalSec = 120
     @AppStorage("vo2Rounds") private var vo2Rounds = 5
+    @State private var rawURLs: [URL] = []
+    @State private var showRawShare = false
 
     var body: some View {
         ZStack {
@@ -316,6 +322,7 @@ struct VO2MaxView: View {
         }
         // Resting test finished → adopt it as your resting HR (adaptive Zone 2).
         .onChange(of: vm.restingResult) { v in if v > 0 { restingHR = v } }
+        .sheet(isPresented: $showRawShare) { ActivityView(items: rawURLs) }
     }
 
     private var ownzoneContent: some View {
@@ -323,63 +330,133 @@ struct VO2MaxView: View {
             Text("Adaptive Threshold (HRV)")
                 .font(.title2.bold()).frame(maxWidth: .infinity, alignment: .leading)
 
-            Text("Experimental. Warm up gradually over 5 minutes — easy walk → brisk → light jog. The app reads your heart-rate variability and finds where it collapses: your aerobic threshold, i.e. the top of Zone 2 for today.")
+            Text("A guided 5-minute ramp. The app reads your heart-rate variability and detects your aerobic threshold via DFA-α1 (the validated method) — α1 dropping through 0.75 marks the top of Zone 2 for today. Follow the stage prompts.")
                 .font(.footnote).foregroundColor(.secondary)
 
-            HStack(spacing: 14) {
+            HStack(spacing: 10) {
                 bigStat(title: "Heart rate", value: vm.bpm.map(String.init) ?? "--",
                         unit: "bpm", color: Color(red: 0.30, green: 0.66, blue: 1.0))
-                bigStat(title: "HRV (RMSSD)",
+                bigStat(title: "DFA α1",
+                        value: vm.ownzoneAlpha1 > 0 ? String(format: "%.2f", vm.ownzoneAlpha1) : "--",
+                        unit: "≈0.75", color: .orange)
+                bigStat(title: "RMSSD",
                         value: vm.ownzoneRMSSD > 0 ? String(format: "%.0f", vm.ownzoneRMSSD) : "--",
                         unit: "ms", color: .green)
             }
 
-            if vm.ownzoneTesting {
-                VStack(spacing: 4) {
-                    Text("Time remaining").font(.caption).foregroundColor(.secondary)
-                    Text(WorkoutViewModel.clock(TimeInterval(vm.ownzoneRemaining)))
-                        .font(.system(size: 40, weight: .bold, design: .rounded)).monospacedDigit()
-                    ProgressView(value: Double(300 - vm.ownzoneRemaining), total: 300).tint(.red)
-                    if vm.ownzoneThresholdHR > 0 {
-                        Text("Threshold detected: \(vm.ownzoneThresholdHR) bpm")
-                            .font(.subheadline.bold()).foregroundColor(.green)
-                    } else {
-                        Text("Keep ramping up the effort…").font(.caption).foregroundColor(.secondary)
-                    }
-                }
-                Button(role: .destructive) { vm.cancelOwnzoneTest() } label: {
-                    Label("Stop", systemImage: "stop.circle").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-            } else {
-                Button { vm.startOwnzoneTest() } label: {
-                    Label(vm.connected ? "Start threshold test" : "Connect strap to start",
-                          systemImage: "play.fill").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent).tint(.red).disabled(!vm.connected)
+            if vm.ownzoneTesting { ownzoneRunning } else { ownzoneIdle }
 
-                if vm.ownzoneThresholdHR > 0 {
-                    VStack(spacing: 8) {
-                        Text("Aerobic threshold ≈ \(vm.ownzoneThresholdHR) bpm")
-                            .font(.headline).foregroundColor(.green)
-                        Button {
-                            let top = vm.ownzoneThresholdHR
-                            ceilingBpmManual = top
-                            floorBpmManual = max(60, top - 15)
-                            customBand = true
-                        } label: {
-                            Label("Use as today's Zone 2 (\(max(60, vm.ownzoneThresholdHR - 15))–\(vm.ownzoneThresholdHR))",
-                                  systemImage: "lock.fill").frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent).tint(.green)
-                    }
-                }
-            }
-
-            connectionControls
+            connectOnly
 
             Text("Needs a strap that sends R-R (HRV) data — most Bluetooth chest straps do. This is an experimental fitness estimate of your aerobic threshold, not a medical measurement.")
                 .font(.caption2).foregroundColor(.secondary)
+        }
+    }
+
+    // Live, staged ramp display while the test runs
+    private var ownzoneRunning: some View {
+        VStack(spacing: 10) {
+            Text("Stage \(vm.ownzoneStageIndex + 1) of \(WorkoutViewModel.ownzoneStages.count)")
+                .font(.caption).foregroundColor(.secondary)
+            Text(vm.ownzoneStageLabel.uppercased())
+                .font(.system(size: 30, weight: .heavy)).foregroundColor(.red)
+            Text("\(WorkoutViewModel.clock(TimeInterval(vm.ownzoneStageRemaining))) left" +
+                 (vm.ownzoneNextStageLabel.map { " · next: \($0)" } ?? " · final stage"))
+                .font(.caption).foregroundColor(.secondary)
+
+            // Per-stage progress
+            ProgressView(value: Double(vm.ownzoneStageSeconds - vm.ownzoneStageRemaining),
+                         total: Double(vm.ownzoneStageSeconds)).tint(.red)
+
+            // Stage segments
+            HStack(spacing: 4) {
+                ForEach(0..<WorkoutViewModel.ownzoneStages.count, id: \.self) { i in
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(i < vm.ownzoneStageIndex ? Color.red.opacity(0.5)
+                              : (i == vm.ownzoneStageIndex ? Color.red : Color.white.opacity(0.15)))
+                        .frame(height: 8)
+                }
+            }
+
+            Text("Total \(WorkoutViewModel.clock(TimeInterval(vm.ownzoneRemaining))) left")
+                .font(.caption2).foregroundColor(.secondary)
+            if vm.ownzoneThresholdHR > 0 {
+                Text("Threshold detected: \(vm.ownzoneThresholdHR) bpm")
+                    .font(.subheadline.bold()).foregroundColor(.green)
+            }
+
+            Button(role: .destructive) { vm.cancelOwnzoneTest() } label: {
+                Label("Stop", systemImage: "stop.circle").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+        }
+    }
+
+    // Pre-test: show the ramp plan + start
+    private var ownzoneIdle: some View {
+        VStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("The 5-minute ramp").font(.caption.bold())
+                ForEach(0..<WorkoutViewModel.ownzoneStages.count, id: \.self) { i in
+                    let mins = WorkoutViewModel.ownzoneStages[0..<i].reduce(0) { $0 + $1.seconds } / 60
+                    HStack {
+                        Text(String(format: "%d:00", mins)).font(.caption.monospacedDigit())
+                            .foregroundColor(.secondary).frame(width: 44, alignment: .leading)
+                        Text(WorkoutViewModel.ownzoneStages[i].label).font(.caption)
+                        Spacer()
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
+
+            Button { vm.startOwnzoneTest() } label: {
+                Label(vm.connected ? "Start guided test" : "Connect strap to start",
+                      systemImage: "play.fill").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent).tint(.red).disabled(!vm.connected)
+
+            if vm.ownzoneThresholdHR > 0 {
+                VStack(spacing: 8) {
+                    Text("Aerobic threshold ≈ \(vm.ownzoneThresholdHR) bpm")
+                        .font(.headline).foregroundColor(.green)
+                    Button {
+                        let top = vm.ownzoneThresholdHR
+                        ceilingBpmManual = top
+                        floorBpmManual = max(60, top - 15)
+                        customBand = true
+                    } label: {
+                        Label("Use as today's Zone 2 (\(max(60, vm.ownzoneThresholdHR - 15))–\(vm.ownzoneThresholdHR))",
+                              systemImage: "lock.fill").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent).tint(.green)
+                }
+            }
+
+            if vm.ownzoneHasData {
+                Button {
+                    rawURLs = vm.ownzoneExportURLs()
+                    if !rawURLs.isEmpty { showRawShare = true }
+                } label: {
+                    Label("Export raw test data (CSV)", systemImage: "square.and.arrow.up")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+    }
+
+    // Connect-only control (no Disconnect on this screen)
+    private var connectOnly: some View {
+        Group {
+            if !vm.connected {
+                Button { vm.connect() } label: {
+                    Label("Connect strap", systemImage: "antenna.radiowaves.left.and.right")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent).tint(.red).disabled(!vm.bluetoothReady)
+            }
         }
     }
 
@@ -706,6 +783,7 @@ struct SettingsView: View {
     @Binding var ceilingBpmManual: Int
     @Binding var useHRR: Bool
     @Binding var voiceEnabled: Bool
+    @Binding var liveBanner: Bool
     @Binding var useMeasuredMax: Bool
     @Binding var measuredMax: Int
 
@@ -875,6 +953,7 @@ struct SettingsView: View {
                             .foregroundColor(vm.notifStatus == "On" ? .green : .orange)
                     }
                     Toggle("Speak alerts (voice cues)", isOn: $voiceEnabled)
+                    Toggle("Live heart-rate banner (Lock Screen / Dynamic Island)", isOn: $liveBanner)
                     Button {
                         vm.runTestAlert(onDenied: { showNotifDenied = true })
                     } label: {

@@ -65,16 +65,68 @@ final class WorkoutViewModel: ObservableObject {
     private var rrBuffer: [Double] = []
     private var ownzoneBelowSince: Date?
     private let ownzoneLength = 300
+    private var lastOwnzoneStage = -1
+    @Published var ownzoneAlpha1: Double = 0          // DFA-α1 (≈0.75 = aerobic threshold)
+    private var ownzoneAlphaBaseline: Double = 0
+    private var cleanRR: [Double] = []                // artifact-corrected R-R window
+    // Raw diagnostic log of the threshold test (for validation / recalibration)
+    private(set) var ownzoneSamples: [(t: Int, stage: Int, label: String, bpm: Int, rmssd: Double, alpha1: Double)] = []
+    private(set) var ownzoneRRLog: [Double] = []
+    var ownzoneHasData: Bool { !ownzoneSamples.isEmpty }
+
+    /// Guided ramp stages for the threshold test (escalating effort, ~1 min each).
+    static let ownzoneStages: [(label: String, seconds: Int)] = [
+        ("Easy walk", 60),
+        ("Brisk walk", 60),
+        ("Light jog", 60),
+        ("Steady jog", 60),
+        ("Build harder", 60),
+    ]
+    var ownzoneElapsed: Int { ownzoneLength - ownzoneRemaining }
+    var ownzoneStageIndex: Int {
+        var acc = 0
+        for (i, s) in Self.ownzoneStages.enumerated() {
+            acc += s.seconds
+            if ownzoneElapsed < acc { return i }
+        }
+        return Self.ownzoneStages.count - 1
+    }
+    var ownzoneStageLabel: String { Self.ownzoneStages[ownzoneStageIndex].label }
+    var ownzoneStageSeconds: Int { Self.ownzoneStages[ownzoneStageIndex].seconds }
+    var ownzoneStageRemaining: Int {
+        var acc = 0
+        for s in Self.ownzoneStages {
+            acc += s.seconds
+            if ownzoneElapsed < acc { return acc - ownzoneElapsed }
+        }
+        return 0
+    }
+    var ownzoneNextStageLabel: String? {
+        let next = ownzoneStageIndex + 1
+        return next < Self.ownzoneStages.count ? Self.ownzoneStages[next].label : nil
+    }
 
     let hrm = HeartRateManager()
     let loc = LocationTracker()
     let health = HealthStore()
     let liveActivity = LiveActivityManager()
+    var liveBannerEnabled = false   // keep the Live Activity up whenever connected
 
     private func liveStatus(_ v: Int) -> String {
         if v < floorBpm { return "low" }
         if v > ceilingBpm { return "high" }
         return "in"
+    }
+
+    /// Show the Live Activity during a workout, or any time the banner option is on
+    /// and a strap is connected; otherwise end it.
+    func syncLiveActivity() {
+        if active || (liveBannerEnabled && connected) {
+            let b = bpm ?? 0
+            liveActivity.start(bpm: b, zone: currentZone, floor: floorBpm, ceiling: ceilingBpm, status: liveStatus(b))
+        } else {
+            liveActivity.end()
+        }
     }
 
     /// History store, injected from the app, used for auto-save on disconnect.
@@ -99,8 +151,8 @@ final class WorkoutViewModel: ObservableObject {
 
     init() {
         hrm.onReading = { [weak self] bpm in self?.ingest(bpm: bpm) }
-        hrm.onDisconnect = { [weak self] in self?.scheduleAutoSave() }
-        hrm.onReconnect = { [weak self] in self?.cancelAutoSave() }
+        hrm.onDisconnect = { [weak self] in self?.scheduleAutoSave(); self?.syncLiveActivity() }
+        hrm.onReconnect = { [weak self] in self?.cancelAutoSave(); self?.syncLiveActivity() }
     }
 
     // MARK: - Auto-save (never lose a workout)
@@ -196,6 +248,7 @@ final class WorkoutViewModel: ObservableObject {
         cancelAutoSave()
         autoSaveIfNeeded()      // user took the strap off — save what they did
         hrm.disconnect()
+        syncLiveActivity()
     }
 
     func start() {
@@ -215,7 +268,7 @@ final class WorkoutViewModel: ObservableObject {
         loc.pause()
         timer?.invalidate()
         lastHRDate = nil
-        liveActivity.end()
+        syncLiveActivity()
     }
 
     func reset() {
@@ -234,7 +287,7 @@ final class WorkoutViewModel: ObservableObject {
         lastHRDate = nil
         loc.reset()
         timer?.invalidate()
-        liveActivity.end()
+        syncLiveActivity()
     }
 
     func resetPeak() { peakBpm = 0 }
@@ -354,8 +407,14 @@ final class WorkoutViewModel: ObservableObject {
         ownzoneRMSSD = 0
         ownzoneBaseline = 0
         ownzoneThresholdHR = 0
+        ownzoneAlpha1 = 0
+        ownzoneAlphaBaseline = 0
         rrBuffer = []
+        cleanRR = []
+        ownzoneSamples = []
+        ownzoneRRLog = []
         ownzoneBelowSince = nil
+        lastOwnzoneStage = -1
         hrm.onRR = { [weak self] rrs in self?.ingestRR(rrs) }
         ownzoneTimer?.invalidate()
         let t = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in self?.ownzoneTick() }
@@ -373,6 +432,17 @@ final class WorkoutViewModel: ObservableObject {
     private func ownzoneTick() {
         guard ownzoneTesting else { return }
         ownzoneRemaining -= 1
+        // Announce each new ramp stage with a voice cue + haptic.
+        let stage = ownzoneStageIndex
+        if stage != lastOwnzoneStage {
+            lastOwnzoneStage = stage
+            hrm.say(Self.ownzoneStages[stage].label)
+            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        }
+        // Per-second diagnostic sample
+        ownzoneSamples.append((t: ownzoneElapsed, stage: stage,
+                               label: Self.ownzoneStages[stage].label,
+                               bpm: bpm ?? 0, rmssd: ownzoneRMSSD, alpha1: ownzoneAlpha1))
         if ownzoneRemaining <= 0 {
             if ownzoneThresholdHR == 0, let b = bpm { ownzoneThresholdHR = b }
             if ownzoneThresholdHR > 0 { store?.addMeasurement(kind: "ownzone", bpm: ownzoneThresholdHR) }
@@ -380,37 +450,106 @@ final class WorkoutViewModel: ObservableObject {
         }
     }
 
-    /// Feed R-R intervals, track RMSSD, and detect where HRV collapses (≈ aerobic threshold).
+    /// Feed R-R intervals → artifact-correct, track RMSSD + DFA-α1, and detect the
+    /// aerobic threshold as the heart rate where DFA-α1 drops through 0.75.
     private func ingestRR(_ rrs: [Double]) {
         guard ownzoneTesting else { return }
-        for rr in rrs where rr > 300 && rr < 2000 { rrBuffer.append(rr) }
-        if rrBuffer.count > 40 { rrBuffer.removeFirst(rrBuffer.count - 40) }
-        guard rrBuffer.count >= 8 else { return }
-
-        var sum = 0.0, n = 0
-        for i in 1..<rrBuffer.count {
-            let d = rrBuffer[i] - rrBuffer[i - 1]
-            sum += d * d; n += 1
+        for raw in rrs where raw > 300 && raw < 2000 {
+            // Artifact correction: reject beats that jump >20% from the last good beat.
+            if let last = cleanRR.last, abs(raw - last) / last > 0.20 { continue }
+            cleanRR.append(raw)
+            ownzoneRRLog.append(raw)
         }
-        let rmssd = n > 0 ? (sum / Double(n)).squareRoot() : 0
-        ownzoneRMSSD = rmssd
-        if rmssd > ownzoneBaseline { ownzoneBaseline = rmssd }
+        if cleanRR.count > 300 { cleanRR.removeFirst(cleanRR.count - 300) }
+        guard cleanRR.count >= 8 else { return }
 
-        // Threshold = HRV stays collapsed (low) for ~8s after a high-HRV baseline.
-        if ownzoneThresholdHR == 0 {
-            let collapsed = rmssd < max(12.0, ownzoneBaseline * 0.2)
-            if collapsed && ownzoneBaseline > 20 {
+        // RMSSD over the recent beats (for display/logging)
+        let recent = Array(cleanRR.suffix(30))
+        var sum = 0.0, n = 0
+        for i in 1..<recent.count { let d = recent[i] - recent[i - 1]; sum += d * d; n += 1 }
+        ownzoneRMSSD = n > 0 ? (sum / Double(n)).squareRoot() : 0
+
+        // DFA-α1 over the recent window (the validated threshold marker)
+        guard cleanRR.count >= 40 else { return }
+        guard let a = Self.dfaAlpha1(Array(cleanRR.suffix(120))) else { return }
+        ownzoneAlpha1 = a
+        if a > ownzoneAlphaBaseline { ownzoneAlphaBaseline = a }
+
+        // Threshold = α1 below 0.75 sustained ~6s, after a healthy resting baseline.
+        if ownzoneThresholdHR == 0, ownzoneAlphaBaseline > 0.85 {
+            if a < 0.75 {
                 if let since = ownzoneBelowSince {
-                    if Date().timeIntervalSince(since) >= 8, let b = bpm, b > 0 {
+                    if Date().timeIntervalSince(since) >= 6, let b = bpm, b > 0 {
                         ownzoneThresholdHR = b
                     }
                 } else {
                     ownzoneBelowSince = Date()
                 }
-            } else {
-                ownzoneBelowSince = nil
+            } else if a >= 0.78 {
+                ownzoneBelowSince = nil   // hysteresis
             }
         }
+    }
+
+    /// Detrended Fluctuation Analysis short-term scaling exponent (α1), box sizes 4–16 beats.
+    static func dfaAlpha1(_ rr: [Double]) -> Double? {
+        let count = rr.count
+        guard count >= 16 else { return nil }
+        let mean = rr.reduce(0, +) / Double(count)
+        var y = [Double](repeating: 0, count: count)
+        var acc = 0.0
+        for i in 0..<count { acc += rr[i] - mean; y[i] = acc }
+
+        var logN = [Double](), logF = [Double]()
+        for s in 4...16 where s <= count {
+            let boxes = count / s
+            guard boxes >= 1 else { continue }
+            var sumSq = 0.0, total = 0
+            for b in 0..<boxes {
+                let start = b * s
+                var sx = 0.0, sy = 0.0, sxx = 0.0, sxy = 0.0
+                for j in 0..<s {
+                    let x = Double(j), v = y[start + j]
+                    sx += x; sy += v; sxx += x * x; sxy += x * v
+                }
+                let denom = Double(s) * sxx - sx * sx
+                let slope = denom != 0 ? (Double(s) * sxy - sx * sy) / denom : 0
+                let intercept = (sy - slope * sx) / Double(s)
+                for j in 0..<s {
+                    let resid = y[start + j] - (slope * Double(j) + intercept)
+                    sumSq += resid * resid; total += 1
+                }
+            }
+            guard total > 0 else { continue }
+            let f = (sumSq / Double(total)).squareRoot()
+            if f > 0 { logN.append(log(Double(s))); logF.append(log(f)) }
+        }
+        guard logN.count >= 2 else { return nil }
+        let m = Double(logN.count)
+        let sx = logN.reduce(0, +), sy = logF.reduce(0, +)
+        var sxx = 0.0, sxy = 0.0
+        for i in 0..<logN.count { sxx += logN[i] * logN[i]; sxy += logN[i] * logF[i] }
+        let denom = m * sxx - sx * sx
+        guard denom != 0 else { return nil }
+        return (m * sxy - sx * sy) / denom
+    }
+
+    /// Write the diagnostic CSVs (per-second curve + raw R-R) and return their URLs.
+    func ownzoneExportURLs() -> [URL] {
+        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        var urls: [URL] = []
+        var s = "seconds,stage,label,bpm,rmssd_ms,dfa_alpha1\n"
+        for x in ownzoneSamples {
+            s += "\(x.t),\(x.stage + 1),\(x.label),\(x.bpm),\(String(format: "%.1f", x.rmssd)),\(String(format: "%.3f", x.alpha1))\n"
+        }
+        let u1 = dir.appendingPathComponent("zonealert_threshold_curve.csv")
+        if (try? s.write(to: u1, atomically: true, encoding: .utf8)) != nil { urls.append(u1) }
+
+        var r = "index,rr_ms\n"
+        for (i, rr) in ownzoneRRLog.enumerated() { r += "\(i),\(String(format: "%.1f", rr))\n" }
+        let u2 = dir.appendingPathComponent("zonealert_threshold_rr.csv")
+        if (try? r.write(to: u2, atomically: true, encoding: .utf8)) != nil { urls.append(u2) }
+        return urls
     }
 
     // MARK: - Notifications / test alert
@@ -469,6 +608,9 @@ final class WorkoutViewModel: ObservableObject {
         if restingTesting && value >= 30 && (restingLow == 0 || value < restingLow) { restingLow = value }
         let z = Zones.zone(forBpm: value, mhr: mhr)
         currentZone = z
+        if active || (liveBannerEnabled && connected) {
+            liveActivity.start(bpm: value, zone: z, floor: floorBpm, ceiling: ceilingBpm, status: liveStatus(value))
+        }
         guard active else { return }
         let now = Date()
         var dt: Double = 1
@@ -483,7 +625,6 @@ final class WorkoutViewModel: ObservableObject {
         addCalories(bpm: value, dt: dt)
         hrHistory.append(value)
         if hrHistory.count > 14400 { hrHistory.removeFirst() }   // ~4h at 1 Hz
-        liveActivity.update(bpm: value, zone: z, floor: floorBpm, ceiling: ceilingBpm, status: liveStatus(value))
     }
 
     /// HR-based calorie estimate (Keytel et al., 2005).
