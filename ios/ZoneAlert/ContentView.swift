@@ -1115,6 +1115,8 @@ struct ProgressTabView: View {
                     Text("Progress").font(.title2.bold())
                         .frame(maxWidth: .infinity, alignment: .leading)
 
+                    DayReviewView(store: store)
+
                     HStack(spacing: 14) {
                         totalsCard(title: "Today", t: store.todayTotals)
                         totalsCard(title: "This week", t: store.weekTotals)

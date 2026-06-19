@@ -89,11 +89,28 @@ struct FitbitView: View {
                 Label("Sync now", systemImage: "arrow.clockwise").frame(maxWidth: .infinity)
             }.buttonStyle(.borderedProminent).tint(.green)
 
+            if fitbit.history.count > 1 {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Recent days").font(.headline)
+                    ForEach(fitbit.history.prefix(14), id: \.date) { h in
+                        HStack {
+                            Text(h.date).font(.caption.monospacedDigit())
+                            Spacer()
+                            Text("\(h.steps) steps · \(h.caloriesOut) kcal" +
+                                 (h.restingHR > 0 ? " · \(h.restingHR) bpm" : ""))
+                                .font(.caption).foregroundColor(.secondary)
+                        }
+                        .padding(8)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.04)))
+                    }
+                }
+            }
+
             Button(role: .destructive) { fitbit.disconnect() } label: {
                 Label("Disconnect Fitbit", systemImage: "xmark.circle").frame(maxWidth: .infinity)
             }.buttonStyle(.bordered)
 
-            Text("Auto-syncs after each workout you finish.")
+            Text("Auto-syncs after each workout you finish. Each day's pull is saved here.")
                 .font(.caption2).foregroundColor(.secondary)
         }
     }

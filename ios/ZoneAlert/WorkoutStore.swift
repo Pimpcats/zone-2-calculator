@@ -126,6 +126,25 @@ final class WorkoutStore: ObservableObject {
         return t
     }
 
+    /// Combined time-in-zone (index 0…5) across all of a day's workouts.
+    func timeInZoneTotals(on day: Date) -> [Double] {
+        var arr = [Double](repeating: 0, count: 6)
+        for r in records(on: day) {
+            for i in 0..<min(6, r.timeInZone.count) { arr[i] += r.timeInZone[i] }
+        }
+        return arr
+    }
+
+    /// Duration-weighted average HR and peak HR for a day.
+    func hrSummary(on day: Date) -> (avg: Int, peak: Int) {
+        let recs = records(on: day)
+        guard !recs.isEmpty else { return (0, 0) }
+        let totalDur = recs.reduce(0) { $0 + $1.duration }
+        let weighted = recs.reduce(0.0) { $0 + Double($1.avgBpm) * $1.duration }
+        let avg = totalDur > 0 ? Int(weighted / totalDur) : 0
+        return (avg, recs.map { $0.peakBpm }.max() ?? 0)
+    }
+
     // MARK: - Goals & streaks
 
     func minutes(on day: Date) -> Double {

@@ -25,6 +25,7 @@ final class FitbitService: NSObject, ObservableObject, ASWebAuthenticationPresen
     @Published var loading = false
     @Published var status = ""
     @Published var daily = FitbitDaily()
+    @Published private(set) var history: [FitbitDaily] = []   // one entry per day, newest first
 
     private let redirectScheme = "zonealert"
     private let redirectURI = "zonealert://fitbit"
@@ -38,6 +39,19 @@ final class FitbitService: NSObject, ObservableObject, ASWebAuthenticationPresen
         accessToken = UserDefaults.standard.string(forKey: "fitbitAccess")
         refreshToken = UserDefaults.standard.string(forKey: "fitbitRefresh")
         connected = accessToken != nil
+        if let data = UserDefaults.standard.data(forKey: "fitbitHistory"),
+           let arr = try? JSONDecoder().decode([FitbitDaily].self, from: data) {
+            history = arr
+        }
+    }
+
+    private func saveDaily(_ d: FitbitDaily) {
+        history.removeAll { $0.date == d.date }
+        history.insert(d, at: 0)
+        if history.count > 90 { history = Array(history.prefix(90)) }
+        if let data = try? JSONEncoder().encode(history) {
+            UserDefaults.standard.set(data, forKey: "fitbitHistory")
+        }
     }
 
     // MARK: - OAuth
@@ -153,6 +167,7 @@ final class FitbitService: NSObject, ObservableObject, ASWebAuthenticationPresen
             d.sleepMinutes = sum["totalMinutesAsleep"] as? Int ?? 0
         }
         daily = d
+        saveDaily(d)
         status = "Synced \(today)"
         loading = false
     }
