@@ -101,6 +101,7 @@ struct WorkoutView: View {
     @ObservedObject var vm: WorkoutViewModel
     @ObservedObject var store: WorkoutStore
     @State private var savedFlash = false
+    @State private var graphTab = 0
     @Environment(\.requestReview) private var requestReview
     @AppStorage("reviewAsked") private var reviewAsked = false
     @AppStorage("healthEnabled") private var healthEnabled = false
@@ -221,20 +222,23 @@ struct WorkoutView: View {
     }
 
     private var pager: some View {
-        TabView {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Heart-rate zones (live)").font(.caption).foregroundColor(.secondary)
-                ZoneGraphView(history: vm.hrHistory, mhr: vm.mhr, bpm: vm.bpm)
-            }.padding(.bottom, 28)
+        VStack(spacing: 8) {
+            // Toggle instead of a swipe, so the graph can be scrolled without
+            // accidentally flipping to the other view.
+            Picker("", selection: $graphTab) {
+                Text("Live zones").tag(0)
+                Text("Time in zone").tag(1)
+            }
+            .pickerStyle(.segmented)
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Time in zone").font(.caption).foregroundColor(.secondary)
+            if graphTab == 0 {
+                ZoneGraphView(history: vm.hrHistory, mhr: vm.mhr, bpm: vm.bpm)
+                    .frame(height: 240)
+            } else {
                 TimeInZoneView(timeInZone: vm.timeInZone, currentZone: vm.currentZone)
-                Spacer(minLength: 0)
-            }.padding(.bottom, 28)
+                    .frame(height: 240)
+            }
         }
-        .tabViewStyle(.page(indexDisplayMode: .always))
-        .frame(height: 280)
     }
 
     private var bottomBar: some View {
