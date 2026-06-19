@@ -255,14 +255,16 @@ final class HeartRateManager: NSObject, ObservableObject {
             if now.timeIntervalSince(lastLowNotify) > 25 {
                 lastLowNotify = now
                 notify(title: "⬇️ Heart rate too low",
-                       body: "\(value) bpm — below your Zone 2 floor of \(floorBpm). Pick up the pace.")
+                       body: "\(value) bpm — below your Zone 2 floor of \(floorBpm). Pick up the pace.",
+                       kind: "zone")
             }
             lastHighNotify = .distantPast
         } else if value > ceilingBpm {
             if now.timeIntervalSince(lastHighNotify) > 25 {
                 lastHighNotify = now
                 notify(title: "⬆️ Heart rate too high",
-                       body: "\(value) bpm — above your Zone 3 ceiling of \(ceilingBpm). Ease off.")
+                       body: "\(value) bpm — above your Zone 3 ceiling of \(ceilingBpm). Ease off.",
+                       kind: "zone")
             }
             lastLowNotify = .distantPast
         } else {
@@ -271,11 +273,12 @@ final class HeartRateManager: NSObject, ObservableObject {
         }
     }
 
-    private func notify(title: String, body: String) {
+    private func notify(title: String, body: String, kind: String = "general") {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
         content.sound = .default
+        content.userInfo = ["kind": kind]
         if #available(iOS 15.0, *) { content.interruptionLevel = .timeSensitive }
         let req = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(req, withCompletionHandler: nil)

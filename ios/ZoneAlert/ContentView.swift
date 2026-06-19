@@ -28,8 +28,8 @@ struct ContentView: View {
     @AppStorage("floorBpmManual") private var floorBpmManual: Int = 114
     @AppStorage("ceilingBpmManual") private var ceilingBpmManual: Int = 133
     @AppStorage("useHRR") private var useHRR: Bool = false
-    @AppStorage("useMeasuredMax") private var useMeasuredMax: Bool = false
-    @AppStorage("measuredMax") private var measuredMax: Int = 0
+    @AppStorage("useMeasuredMax") private var useMeasuredMax: Bool = true
+    @AppStorage("measuredMax") private var measuredMax: Int = 190
 
     var body: some View {
         TabView {
@@ -621,10 +621,7 @@ struct SettingsView: View {
         HStack {
             Text(label)
             Spacer()
-            TextField("", value: value, format: .number)
-                .keyboardType(.numberPad)
-                .multilineTextAlignment(.trailing)
-                .frame(width: 72)
+            NumberField(value: value).frame(width: 72)
             Text(unit).foregroundColor(.secondary)
         }
     }
@@ -650,9 +647,9 @@ struct SettingsView: View {
                     HStack {
                         Text("Weight")
                         Spacer()
-                        TextField("", value: $weightLbs, format: .number.precision(.fractionLength(0)))
-                            .keyboardType(.decimalPad)
-                            .multilineTextAlignment(.trailing)
+                        NumberField(value: Binding(
+                            get: { Int(weightLbs.rounded()) },
+                            set: { weightLbs = Double($0) }))
                             .frame(width: 72)
                         Text("lbs").foregroundColor(.secondary)
                     }
