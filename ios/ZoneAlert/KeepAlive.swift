@@ -3,31 +3,69 @@ import AVFoundation
 
 /// Keeps the app running in the background (so heart-rate readings keep arriving and
 /// zone alerts keep firing while the screen is locked) by holding an active audio
-/// session playing inaudible, mixable silence. Started while a strap is connected.
-final class KeepAlive {
+/// session playing inaudible, mixable silence. Restarts itself after interruptions
+/// (e.g. voice cues, phone calls, route changes). Started while a strap is connected.
+final class KeepAlive: NSObject, AVAudioPlayerDelegate {
     private var player: AVAudioPlayer?
+    private var running = false
+
+    override init() {
+        super.init()
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleInterruption(_:)),
+            name: AVAudioSession.interruptionNotification, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleRouteChange(_:)),
+            name: AVAudioSession.routeChangeNotification, object: nil)
+    }
 
     func start() {
-        guard player == nil else { return }
+        running = true
+        activate()
+    }
+
+    func stop() {
+        running = false
+        player?.stop()
+        player = nil
+        try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+    }
+
+    private func activate() {
+        guard running else { return }
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
             try session.setActive(true)
-            let p = try AVAudioPlayer(data: KeepAlive.silentWav)
-            p.numberOfLoops = -1
-            p.volume = 0
-            p.prepareToPlay()
-            p.play()
-            player = p
+            if player == nil {
+                let p = try AVAudioPlayer(data: KeepAlive.silentWav)
+                p.numberOfLoops = -1
+                p.volume = 0.01            // effectively silent, but non-zero keeps it "playing"
+                p.delegate = self
+                player = p
+            }
+            player?.prepareToPlay()
+            player?.play()
         } catch {
-            // If audio can't start we silently fall back to BLE-only background wakes.
+            // Fall back to BLE-only background wakes if audio can't start.
         }
     }
 
-    func stop() {
-        player?.stop()
-        player = nil
-        try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+    @objc private func handleInterruption(_ n: Notification) {
+        guard running,
+              let info = n.userInfo,
+              let raw = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+        if type == .ended { activate() }     // resume after the interruption clears
+    }
+
+    @objc private func handleRouteChange(_ n: Notification) {
+        if running { activate() }
+    }
+
+    // Restart if playback ever stops for any reason.
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        if running { activate() }
     }
 
     /// A 1-second mono 16-bit PCM WAV of pure silence, generated in code.
