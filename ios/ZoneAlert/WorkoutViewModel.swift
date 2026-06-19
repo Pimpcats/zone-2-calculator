@@ -34,6 +34,16 @@ final class WorkoutViewModel: ObservableObject {
     @Published var recoveryResult = 0      // bpm dropped in 60s
     private var recoveryTimer: Timer?
 
+    // Interval timer (VO2 / threshold intervals)
+    @Published var intervalActive = false
+    @Published var intervalIsWork = true
+    @Published var intervalRemaining = 0
+    @Published var intervalRound = 0
+    private var intervalWorkSec = 120
+    private var intervalRestSec = 120
+    private var intervalRounds = 5
+    private var intervalTimer: Timer?
+
     // Settings (pushed in from the persisted @AppStorage values)
     private(set) var age: Int = 40
     private(set) var isMale: Bool = true
@@ -245,6 +255,53 @@ final class WorkoutViewModel: ObservableObject {
             if restingResult > 0 { store?.addMeasurement(kind: "resting", bpm: restingResult) }
             cancelRestingTest()
         }
+    }
+
+    // MARK: - Interval timer
+
+    var intervalTotalRounds: Int { intervalRounds }
+
+    func startIntervals(work: Int, rest: Int, rounds: Int) {
+        intervalWorkSec = work; intervalRestSec = rest; intervalRounds = max(1, rounds)
+        intervalActive = true
+        intervalIsWork = true
+        intervalRound = 1
+        intervalRemaining = work
+        announceInterval(work: true)
+        intervalTimer?.invalidate()
+        let t = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in self?.intervalTick() }
+        RunLoop.main.add(t, forMode: .common)
+        intervalTimer = t
+    }
+
+    func stopIntervals() {
+        intervalActive = false
+        intervalTimer?.invalidate()
+        intervalTimer = nil
+    }
+
+    private func intervalTick() {
+        guard intervalActive else { return }
+        intervalRemaining -= 1
+        if intervalRemaining > 0 { return }
+        if intervalIsWork {
+            intervalIsWork = false
+            intervalRemaining = intervalRestSec
+            announceInterval(work: false)
+        } else if intervalRound >= intervalRounds {
+            stopIntervals()
+            hrm.say("Workout complete. Great job.")
+        } else {
+            intervalRound += 1
+            intervalIsWork = true
+            intervalRemaining = intervalWorkSec
+            announceInterval(work: true)
+        }
+    }
+
+    private func announceInterval(work: Bool) {
+        hrm.say(work ? "Go hard" : "Recover")
+        UINotificationFeedbackGenerator().notificationOccurred(work ? .warning : .success)
     }
 
     // MARK: - Heart-rate recovery test (60s drop after hard effort)

@@ -38,6 +38,11 @@ final class HeartRateManager: NSObject, ObservableObject {
 
     private func speak(_ text: String) {
         guard voiceEnabled else { return }
+        say(text)
+    }
+
+    /// Speak unconditionally (used by the interval timer cues).
+    func say(_ text: String) {
         let u = AVSpeechUtterance(string: text)
         u.rate = 0.5
         speaker.speak(u)

@@ -284,6 +284,7 @@ struct VO2MaxView: View {
 
     @State private var mode = 1
     @AppStorage("vo2IntervalSec") private var vo2IntervalSec = 120
+    @AppStorage("vo2Rounds") private var vo2Rounds = 5
 
     var body: some View {
         ZStack {
@@ -607,6 +608,37 @@ struct VO2MaxView: View {
                     Stepper("Adjust by 30s", value: $vo2IntervalSec, in: 30...900, step: 30)
                     Text("Recovery: same as the interval (\(intervalText)) easy. Bump +30s when this feels repeatable.")
                         .font(.caption).foregroundColor(.secondary)
+                }
+            }
+
+            guideCard(title: "Interval timer", icon: "timer") {
+                if vm.intervalActive {
+                    VStack(spacing: 8) {
+                        HStack {
+                            Text(vm.intervalIsWork ? "HARD" : "EASY")
+                                .font(.title3.bold())
+                                .foregroundColor(vm.intervalIsWork ? .red : .green)
+                            Spacer()
+                            Text("Round \(vm.intervalRound)/\(vm.intervalTotalRounds)").font(.subheadline)
+                        }
+                        Text(WorkoutViewModel.clock(TimeInterval(vm.intervalRemaining)))
+                            .font(.system(size: 44, weight: .bold, design: .rounded))
+                            .monospacedDigit().frame(maxWidth: .infinity)
+                        Button(role: .destructive) { vm.stopIntervals() } label: {
+                            Label("Stop", systemImage: "stop.circle").frame(maxWidth: .infinity)
+                        }.buttonStyle(.bordered)
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Stepper("Rounds: \(vo2Rounds)", value: $vo2Rounds, in: 1...20)
+                        Text("Each round: \(intervalText) hard / \(intervalText) easy, with spoken cues.")
+                            .font(.caption).foregroundColor(.secondary)
+                        Button {
+                            vm.startIntervals(work: vo2IntervalSec, rest: vo2IntervalSec, rounds: vo2Rounds)
+                        } label: {
+                            Label("Start interval timer", systemImage: "play.fill").frame(maxWidth: .infinity)
+                        }.buttonStyle(.borderedProminent).tint(.red)
+                    }
                 }
             }
 
@@ -937,6 +969,29 @@ struct CalculatorView: View {
 
 struct ProgressTabView: View {
     @ObservedObject var store: WorkoutStore
+    @AppStorage("dailyGoalMin") private var dailyGoalMin = 30
+
+    private var goalsCard: some View {
+        let todayMin = store.minutes(on: Date())
+        let streak = store.currentStreak(goalMinutes: dailyGoalMin)
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Daily goal").font(.subheadline.bold()).foregroundColor(.red)
+                Spacer()
+                Text("🔥 \(streak)-day streak").font(.subheadline.bold())
+            }
+            ProgressView(value: min(todayMin, Double(dailyGoalMin)), total: Double(max(dailyGoalMin, 1)))
+                .tint(.red)
+            HStack {
+                Text("\(Int(todayMin)) / \(dailyGoalMin) min today")
+                    .font(.caption).foregroundColor(.secondary)
+                Spacer()
+                Stepper("Goal", value: $dailyGoalMin, in: 5...180, step: 5).labelsHidden()
+            }
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.05)))
+    }
 
     var body: some View {
         ZStack {
@@ -950,6 +1005,8 @@ struct ProgressTabView: View {
                         totalsCard(title: "Today", t: store.todayTotals)
                         totalsCard(title: "This week", t: store.weekTotals)
                     }
+
+                    goalsCard
 
                     CalendarView(store: store)
 

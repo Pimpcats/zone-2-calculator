@@ -126,6 +126,29 @@ final class WorkoutStore: ObservableObject {
         return t
     }
 
+    // MARK: - Goals & streaks
+
+    func minutes(on day: Date) -> Double {
+        records(on: day).reduce(0) { $0 + $1.duration / 60.0 }
+    }
+
+    /// Consecutive days (ending today, or yesterday if today isn't met yet) meeting the goal.
+    func currentStreak(goalMinutes: Int) -> Int {
+        let cal = Calendar.current
+        var day = cal.startOfDay(for: Date())
+        if minutes(on: day) < Double(goalMinutes) {
+            guard let y = cal.date(byAdding: .day, value: -1, to: day) else { return 0 }
+            day = y
+        }
+        var streak = 0
+        while minutes(on: day) >= Double(goalMinutes) {
+            streak += 1
+            guard let prev = cal.date(byAdding: .day, value: -1, to: day) else { break }
+            day = prev
+        }
+        return streak
+    }
+
     /// Duration (in minutes) for each of the last 7 days, oldest → newest.
     func last7DaysMinutes() -> [(label: String, minutes: Double)] {
         let cal = Calendar.current
