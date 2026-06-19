@@ -73,6 +73,7 @@ final class HeartRateManager: NSObject, ObservableObject {
     private var lastLowNotify = Date.distantPast
     private var lastHighNotify = Date.distantPast
     private let keepAlive = KeepAlive()
+    private var rescanWork: DispatchWorkItem?
 
     override init() {
         super.init()
@@ -108,23 +109,39 @@ final class HeartRateManager: NSObject, ObservableObject {
             statusText = "Turn on Bluetooth to connect"
             return
         }
-        // 1. Reconnect directly to our pinned strap (works even if it's already
-        //    connected at the OS level and therefore not advertising).
+        statusText = pinnedName != nil ? "Searching for \(pinnedName!)…" : "Searching for your strap…"
+        // Fast path: ask iOS to connect directly to a known / already-connected strap.
         if let pid = pinnedID, let uuid = UUID(uuidString: pid),
            let known = central.retrievePeripherals(withIdentifiers: [uuid]).first {
-            connectTo(known)
-            return
-        }
-        // 2. Grab an HR strap already connected to the system (no pin yet).
-        if pinnedID == nil,
-           let conn = central.retrieveConnectedPeripherals(withServices: [hrService]).first {
+            peripheral = known; known.delegate = self
+            central.connect(known, options: nil)
+        } else if pinnedID == nil,
+                  let conn = central.retrieveConnectedPeripherals(withServices: [hrService]).first {
             pinIfNeeded(conn)
-            connectTo(conn)
-            return
+            peripheral = conn; conn.delegate = self
+            central.connect(conn, options: nil)
         }
-        // 3. Otherwise scan for advertising straps.
-        statusText = pinnedName != nil ? "Searching for \(pinnedName!)…" : "Searching for your strap…"
+        // Always ALSO scan in parallel — catches a strap that isn't advertising yet,
+        // instead of just waiting on a pending connect.
         central.scanForPeripherals(withServices: [hrService], options: nil)
+        scheduleReScan()
+    }
+
+    /// Re-kick the scan periodically until connected (some straps are slow to advertise).
+    private func scheduleReScan() {
+        rescanWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self, !self.connected, self.central.state == .poweredOn else { return }
+            self.central.scanForPeripherals(withServices: [self.hrService], options: nil)
+            self.scheduleReScan()
+        }
+        rescanWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: work)
+    }
+
+    private func cancelReScan() {
+        rescanWork?.cancel()
+        rescanWork = nil
     }
 
     private func pinIfNeeded(_ peripheral: CBPeripheral) {
@@ -146,6 +163,7 @@ final class HeartRateManager: NSObject, ObservableObject {
     }
 
     func disconnect() {
+        cancelReScan()
         if let p = peripheral { central.cancelPeripheralConnection(p) }
         central.stopScan()
         connected = false
@@ -362,6 +380,8 @@ extension HeartRateManager: CBCentralManagerDelegate {
             peripheral.discoverServices([hrService])
             return
         }
+        cancelReScan()
+        central.stopScan()
         DispatchQueue.main.async {
             self.connected = true
             self.statusText = "Connected to \(peripheral.name ?? "strap")"
