@@ -1,6 +1,7 @@
 import Foundation
 import CoreBluetooth
 import UserNotifications
+import AVFoundation
 
 /// A nearby heart-rate sensor found during a compatibility scan.
 struct CompatDevice: Identifiable {
@@ -32,6 +33,15 @@ final class HeartRateManager: NSObject, ObservableObject {
     var floorBpm: Int = 0          // never drop below this
     var ceilingBpm: Int = 1000     // never go above this
     var alertsEnabled = true
+    var voiceEnabled = false
+    private let speaker = AVSpeechSynthesizer()
+
+    private func speak(_ text: String) {
+        guard voiceEnabled else { return }
+        let u = AVSpeechUtterance(string: text)
+        u.rate = 0.5
+        speaker.speak(u)
+    }
 
     // Compatibility scan (list nearby HR sensors without auto-connecting)
     @Published var compatDevices: [CompatDevice] = []
@@ -257,6 +267,7 @@ final class HeartRateManager: NSObject, ObservableObject {
                 notify(title: "⬇️ Heart rate too low",
                        body: "\(value) bpm — below your Zone 2 floor of \(floorBpm). Pick up the pace.",
                        kind: "zone")
+                speak("Heart rate low. Pick it up.")
             }
             lastHighNotify = .distantPast
         } else if value > ceilingBpm {
@@ -265,6 +276,7 @@ final class HeartRateManager: NSObject, ObservableObject {
                 notify(title: "⬆️ Heart rate too high",
                        body: "\(value) bpm — above your Zone 3 ceiling of \(ceilingBpm). Ease off.",
                        kind: "zone")
+                speak("Heart rate high. Ease off.")
             }
             lastLowNotify = .distantPast
         } else {

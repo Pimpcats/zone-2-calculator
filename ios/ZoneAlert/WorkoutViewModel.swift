@@ -27,6 +27,13 @@ final class WorkoutViewModel: ObservableObject {
     private var restingTimer: Timer?
     private let restingTestLength = 300
 
+    // 60-second heart-rate recovery test
+    @Published var recoveryTesting = false
+    @Published var recoveryRemaining = 0
+    @Published var recoveryStartHR = 0
+    @Published var recoveryResult = 0      // bpm dropped in 60s
+    private var recoveryTimer: Timer?
+
     // Settings (pushed in from the persisted @AppStorage values)
     private(set) var age: Int = 40
     private(set) var isMale: Bool = true
@@ -237,6 +244,36 @@ final class WorkoutViewModel: ObservableObject {
             restingResult = restingLow
             if restingResult > 0 { store?.addMeasurement(kind: "resting", bpm: restingResult) }
             cancelRestingTest()
+        }
+    }
+
+    // MARK: - Heart-rate recovery test (60s drop after hard effort)
+
+    func startRecoveryTest() {
+        guard let b = bpm, b > 0 else { return }
+        recoveryTesting = true
+        recoveryRemaining = 60
+        recoveryStartHR = b
+        recoveryResult = 0
+        recoveryTimer?.invalidate()
+        let t = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in self?.recoveryTick() }
+        RunLoop.main.add(t, forMode: .common)
+        recoveryTimer = t
+    }
+
+    func cancelRecoveryTest() {
+        recoveryTesting = false
+        recoveryTimer?.invalidate()
+        recoveryTimer = nil
+    }
+
+    private func recoveryTick() {
+        guard recoveryTesting else { return }
+        recoveryRemaining -= 1
+        if recoveryRemaining <= 0 {
+            if let b = bpm { recoveryResult = max(0, recoveryStartHR - b) }
+            if recoveryResult > 0 { store?.addMeasurement(kind: "recovery", bpm: recoveryResult) }
+            cancelRecoveryTest()
         }
     }
 

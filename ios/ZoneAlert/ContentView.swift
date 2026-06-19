@@ -1,6 +1,7 @@
 import SwiftUI
 import UserNotifications
 import UIKit
+import StoreKit
 
 // MARK: - App version info (auto-set by CI to 1.0.<build#>)
 
@@ -28,6 +29,7 @@ struct ContentView: View {
     @AppStorage("floorBpmManual") private var floorBpmManual: Int = 114
     @AppStorage("ceilingBpmManual") private var ceilingBpmManual: Int = 133
     @AppStorage("useHRR") private var useHRR: Bool = false
+    @AppStorage("voiceEnabled") private var voiceEnabled: Bool = false
     @AppStorage("useMeasuredMax") private var useMeasuredMax: Bool = true
     @AppStorage("measuredMax") private var measuredMax: Int = 190
 
@@ -47,7 +49,7 @@ struct ContentView: View {
             SettingsView(vm: vm, hrm: vm.hrm, store: store, age: $age, isMale: $isMale, weightLbs: $weightLbs,
                          restingHR: $restingHR, bandZone: $bandZone, customBand: $customBand,
                          floorBpmManual: $floorBpmManual, ceilingBpmManual: $ceilingBpmManual,
-                         useHRR: $useHRR,
+                         useHRR: $useHRR, voiceEnabled: $voiceEnabled,
                          useMeasuredMax: $useMeasuredMax, measuredMax: $measuredMax)
                 .tabItem { Label("Settings", systemImage: "gearshape.fill") }
         }
@@ -69,6 +71,7 @@ struct ContentView: View {
         .onChange(of: floorBpmManual) { _ in applySettings() }
         .onChange(of: ceilingBpmManual) { _ in applySettings() }
         .onChange(of: useHRR) { _ in applySettings() }
+        .onChange(of: voiceEnabled) { _ in applySettings() }
         .onChange(of: useMeasuredMax) { _ in applySettings() }
         .onChange(of: measuredMax) { _ in applySettings() }
     }
@@ -80,6 +83,7 @@ struct ContentView: View {
         vm.apply(age: age, isMale: isMale, weightKg: weightLbs * 0.453592, restingHR: restingHR,
                  bandZone: bandZone, mhrOverride: override, manualFloor: mFloor, manualCeiling: mCeil,
                  useHRR: useHRR)
+        vm.hrm.voiceEnabled = voiceEnabled
     }
 
     private func requestNotifications() {
@@ -93,6 +97,8 @@ struct WorkoutView: View {
     @ObservedObject var vm: WorkoutViewModel
     @ObservedObject var store: WorkoutStore
     @State private var savedFlash = false
+    @Environment(\.requestReview) private var requestReview
+    @AppStorage("reviewAsked") private var reviewAsked = false
 
     private var tooLow: Bool { vm.connected && vm.active && (vm.bpm ?? 999) < vm.floorBpm }
     private var tooHigh: Bool { vm.connected && vm.active && (vm.bpm ?? 0) > vm.ceilingBpm }
@@ -153,6 +159,10 @@ struct WorkoutView: View {
                     withAnimation { savedFlash = true }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                         withAnimation { savedFlash = false }
+                    }
+                    if store.records.count >= 2 && !reviewAsked {   // ask at a happy moment
+                        reviewAsked = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { requestReview() }
                     }
                 } label: {
                     Label("Finish", systemImage: "checkmark.circle.fill")
@@ -282,9 +292,10 @@ struct VO2MaxView: View {
                 VStack(spacing: 18) {
                     Picker("", selection: $mode) {
                         Text("Resting").tag(0)
-                        Text("Max Test").tag(1)
+                        Text("Max").tag(1)
                         Text("Threshold").tag(2)
-                        Text("Guide").tag(3)
+                        Text("Recovery").tag(3)
+                        Text("Guide").tag(4)
                     }
                     .pickerStyle(.segmented)
 
@@ -292,6 +303,7 @@ struct VO2MaxView: View {
                     case 0: restingContent
                     case 1: testContent
                     case 2: ownzoneContent
+                    case 3: recoveryContent
                     default: guideContent
                     }
                 }
@@ -512,6 +524,55 @@ struct VO2MaxView: View {
         }
     }
 
+    private var recoveryContent: some View {
+        VStack(spacing: 18) {
+            Text("Heart-Rate Recovery")
+                .font(.title2.bold()).frame(maxWidth: .infinity, alignment: .leading)
+
+            Text("How many beats your heart drops in 60 seconds right after hard effort — a strong fitness marker. Bigger drop = fitter. Go hard, stop, then tap Start the instant you stop and stay still.")
+                .font(.footnote).foregroundColor(.secondary)
+
+            HStack(spacing: 14) {
+                bigStat(title: vm.recoveryTesting ? "At stop" : "Current",
+                        value: vm.recoveryTesting ? "\(vm.recoveryStartHR)" : (vm.bpm.map(String.init) ?? "--"),
+                        unit: "bpm", color: Color(red: 0.30, green: 0.66, blue: 1.0))
+                bigStat(title: "Recovery (60s)",
+                        value: vm.recoveryResult > 0 ? "−\(vm.recoveryResult)" : "--",
+                        unit: "bpm", color: .green)
+            }
+
+            if vm.recoveryTesting {
+                VStack(spacing: 4) {
+                    Text("Stay still — measuring").font(.caption).foregroundColor(.secondary)
+                    Text(WorkoutViewModel.clock(TimeInterval(vm.recoveryRemaining)))
+                        .font(.system(size: 40, weight: .bold, design: .rounded)).monospacedDigit()
+                    ProgressView(value: Double(60 - vm.recoveryRemaining), total: 60).tint(.red)
+                    Text("Now: \(vm.bpm.map(String.init) ?? "--") bpm").font(.caption)
+                }
+                Button(role: .destructive) { vm.cancelRecoveryTest() } label: {
+                    Label("Cancel", systemImage: "stop.circle").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            } else {
+                Button { vm.startRecoveryTest() } label: {
+                    Label(vm.connected ? "Start (I just stopped)" : "Connect strap to start",
+                          systemImage: "play.fill").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent).tint(.red)
+                .disabled(!vm.connected || (vm.bpm ?? 0) == 0)
+                if vm.recoveryResult > 0 {
+                    Text("Your heart dropped \(vm.recoveryResult) bpm in the first minute.")
+                        .font(.caption).foregroundColor(.green)
+                }
+            }
+
+            connectionControls
+
+            Text("Rough guide: a 1-minute recovery above ~12 bpm is typical; higher is better. Tracked on the Progress trends. Not a medical measurement.")
+                .font(.caption2).foregroundColor(.secondary)
+        }
+    }
+
     private var intervalText: String {
         String(format: "%d:%02d", vo2IntervalSec / 60, vo2IntervalSec % 60)
     }
@@ -609,6 +670,7 @@ struct SettingsView: View {
     @Binding var floorBpmManual: Int
     @Binding var ceilingBpmManual: Int
     @Binding var useHRR: Bool
+    @Binding var voiceEnabled: Bool
     @Binding var useMeasuredMax: Bool
     @Binding var measuredMax: Int
 
@@ -770,6 +832,7 @@ struct SettingsView: View {
                         Text(vm.notifStatus)
                             .foregroundColor(vm.notifStatus == "On" ? .green : .orange)
                     }
+                    Toggle("Speak alerts (voice cues)", isOn: $voiceEnabled)
                     Button {
                         vm.runTestAlert(onDenied: { showNotifDenied = true })
                     } label: {
@@ -892,7 +955,7 @@ struct ProgressTabView: View {
 
                     weeklyChart
 
-                    if !store.series("resting").isEmpty || !store.series("ownzone").isEmpty {
+                    if !store.series("resting").isEmpty || !store.series("ownzone").isEmpty || !store.series("recovery").isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Trends").font(.headline)
                             if !store.series("resting").isEmpty {
@@ -902,6 +965,10 @@ struct ProgressTabView: View {
                             if !store.series("ownzone").isEmpty {
                                 TrendChart(title: "Aerobic threshold",
                                            points: store.series("ownzone"), color: .orange)
+                            }
+                            if !store.series("recovery").isEmpty {
+                                TrendChart(title: "HR recovery (60s drop)",
+                                           points: store.series("recovery"), color: .mint)
                             }
                         }
                     }
