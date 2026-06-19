@@ -57,6 +57,7 @@ final class HeartRateManager: NSObject, ObservableObject {
     private let restoreID = "com.pimpcats.zonealert.central"
     private var lastLowNotify = Date.distantPast
     private var lastHighNotify = Date.distantPast
+    private let keepAlive = KeepAlive()
 
     override init() {
         super.init()
@@ -125,6 +126,7 @@ final class HeartRateManager: NSObject, ObservableObject {
         peripheral.delegate = self
         deviceName = peripheral.name ?? pinnedName ?? "Heart rate strap"
         statusText = "Connecting to \(deviceName ?? "strap")…"
+        keepAlive.start()      // keep alerts firing while backgrounded / screen locked
         central.connect(peripheral, options: nil)
     }
 
@@ -133,6 +135,7 @@ final class HeartRateManager: NSObject, ObservableObject {
         central.stopScan()
         connected = false
         statusText = "Disconnected"
+        keepAlive.stop()
     }
 
     // MARK: - Compatibility scan
@@ -194,6 +197,7 @@ final class HeartRateManager: NSObject, ObservableObject {
         deviceName = "Demo sensor"
         statusText = "Demo sensor (simulated)"
         demoStart = Date()
+        keepAlive.start()      // lets demo run (and alert) in the background too
         demoTimer?.invalidate()
         let t = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in self?.demoTick() }
         RunLoop.main.add(t, forMode: .common)
@@ -207,6 +211,7 @@ final class HeartRateManager: NSObject, ObservableObject {
         connected = false
         bpm = nil
         statusText = "Demo stopped"
+        keepAlive.stop()
     }
 
     private func demoTick() {
@@ -226,6 +231,19 @@ final class HeartRateManager: NSObject, ObservableObject {
     func sendTestAlert() {
         notify(title: "🔔 Zone Alert test",
                body: "Alerts are working. You'll be buzzed if you drop below \(floorBpm) or go above \(ceilingBpm) bpm.")
+    }
+
+    /// Schedules a test alert a few seconds out so you can lock the screen and confirm
+    /// the banner appears while the app is in the background.
+    func scheduleBackgroundTest() {
+        let content = UNMutableNotificationContent()
+        content.title = "🔔 Background alert works"
+        content.body = "If you can see this on your lock screen, zone alerts will reach you in the background."
+        content.sound = .default
+        if #available(iOS 15.0, *) { content.interruptionLevel = .timeSensitive }
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 6, repeats: false)
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger))
     }
 
     // MARK: - Alert evaluation

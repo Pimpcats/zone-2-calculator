@@ -25,7 +25,12 @@ Because nothing is transmitted off the device, you can answer:
 - `NSLocationWhenInUseUsageDescription` / `NSLocationAlwaysAndWhenInUseUsageDescription` —
   measure distance/pace during a workout.
 - Background modes: `bluetooth-central` (keep reading HR for alerts), `location` (keep
-  recording distance while screen is locked).
+  recording distance while screen is locked), `audio` (keep the app processing heart-rate
+  readings so zone alerts fire reliably while backgrounded — plays inaudible, mixable
+  silence only while a strap is connected).
+  - *App Review risk:* the `audio` background mode (silent keep-alive) can draw scrutiny.
+    If flagged, alternatives: rely on `bluetooth-central` wakes only (less reliable), or
+    make the keep-alive a user-facing toggle ("Keep alerting in background"). Say the word.
 
 ## Likely review questions & how we've addressed them
 1. **"How do we test the Bluetooth feature?"** → Demo mode (above).

@@ -778,10 +778,15 @@ struct SettingsView: View {
                     } label: {
                         Label("Test alert (buzz + banner)", systemImage: "bell.badge")
                     }
+                    Button {
+                        vm.hrm.scheduleBackgroundTest()
+                    } label: {
+                        Label("Test background alert (lock screen in 6s)", systemImage: "lock.iphone")
+                    }
                 } header: {
                     Text("Your target band")
                 } footer: {
-                    Text("Tip: you'll feel a buzz immediately. The banner/sound shows here and on your lock screen. If it says Notifications: Off, tap Test and choose Open Settings → turn on Allow Notifications.")
+                    Text("Tip: tap the background test, then immediately lock your phone — a banner should appear in ~6 seconds. While a strap is connected (or Demo mode is on), Zone Alert keeps running in the background so zone alerts reach you with the screen locked.")
                 }
             }
             .scrollDismissesKeyboard(.interactively)
