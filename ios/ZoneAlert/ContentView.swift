@@ -597,6 +597,17 @@ struct VO2MaxView: View {
                     .font(.caption).foregroundColor(.green)
             }
 
+            // Natural flow: after you hit your max and stop, measure the recovery.
+            Button {
+                vm.startRecoveryTest()
+                mode = 3
+            } label: {
+                Label("Just stopped? Measure recovery →", systemImage: "arrow.down.heart.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent).tint(.green)
+            .disabled(!vm.connected || (vm.bpm ?? 0) == 0)
+
             HStack {
                 Button("Reset peak") { vm.resetPeak() }.buttonStyle(.bordered)
                 Spacer()
@@ -604,7 +615,7 @@ struct VO2MaxView: View {
 
             connectionControls
 
-            Text("VO₂ Max here is a rough estimate from the heart-rate-ratio method, not lab-measured. Push to true max only if you're healthy and cleared to.")
+            Text("VO₂ Max here is a rough estimate from the heart-rate-ratio method, not lab-measured. Push to true max only if you're healthy and cleared to. After your max, hit Measure recovery to capture how fast your heart drops.")
                 .font(.caption2).foregroundColor(.secondary)
         }
     }
