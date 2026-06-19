@@ -16,6 +16,14 @@ Because nothing is transmitted off the device, you can answer:
   and identifiers all stay on device; the only export is user‑initiated via the share sheet.)
 - If you later add analytics or any network feature, you must update this.
 
+## Apple Health (HealthKit)
+- The app can save workouts to Apple Health. This needs the **HealthKit entitlement**
+  (`com.apple.developer.healthkit`), which is **not** added to the sideload build (it would
+  break free-account signing). **Before App Store submission:** enable the HealthKit
+  capability in the target, add the entitlement, and the existing toggle will start saving.
+- Usage strings (`NSHealthShareUsageDescription`, `NSHealthUpdateUsageDescription`) are
+  already in Info.plist.
+
 ## Export compliance
 - `ITSAppUsesNonExemptEncryption = false` is set in Info.plist (no custom encryption), so you
   can answer "No" to the encryption question and skip extra paperwork.

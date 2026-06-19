@@ -29,6 +29,8 @@ targets:
         NSBluetoothAlwaysUsageDescription: "Zone Alert connects to your heart-rate strap to track your training zones and alert you when you drop out of your target zone — including while the screen is locked."
         NSLocationWhenInUseUsageDescription: "Zone Alert uses GPS to measure your distance and pace during a workout."
         NSLocationAlwaysAndWhenInUseUsageDescription: "Zone Alert tracks distance and pace in the background so your workout keeps recording while the screen is locked."
+        NSHealthShareUsageDescription: "Zone Alert can read your workouts from Apple Health."
+        NSHealthUpdateUsageDescription: "Zone Alert can save your completed workouts to Apple Health."
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.pimpcats.zonealert

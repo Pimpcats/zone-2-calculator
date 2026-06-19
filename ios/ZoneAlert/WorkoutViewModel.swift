@@ -68,6 +68,7 @@ final class WorkoutViewModel: ObservableObject {
 
     let hrm = HeartRateManager()
     let loc = LocationTracker()
+    let health = HealthStore()
 
     /// History store, injected from the app, used for auto-save on disconnect.
     var store: WorkoutStore?

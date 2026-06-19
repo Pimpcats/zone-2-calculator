@@ -99,6 +99,7 @@ struct WorkoutView: View {
     @State private var savedFlash = false
     @Environment(\.requestReview) private var requestReview
     @AppStorage("reviewAsked") private var reviewAsked = false
+    @AppStorage("healthEnabled") private var healthEnabled = false
 
     private var tooLow: Bool { vm.connected && vm.active && (vm.bpm ?? 999) < vm.floorBpm }
     private var tooHigh: Bool { vm.connected && vm.active && (vm.bpm ?? 0) > vm.ceilingBpm }
@@ -154,7 +155,9 @@ struct WorkoutView: View {
             Spacer()
             if vm.duration > 0 {
                 Button {
-                    store.add(vm.makeRecord())
+                    let record = vm.makeRecord()
+                    store.add(record)
+                    if healthEnabled { vm.health.save(record) }
                     vm.reset()
                     withAnimation { savedFlash = true }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
@@ -710,6 +713,7 @@ struct SettingsView: View {
     @State private var exportURL: URL?
     @State private var showShare = false
     @State private var showCompat = false
+    @AppStorage("healthEnabled") private var healthEnabled = false
 
     private func intRow(_ label: String, value: Binding<Int>, unit: String) -> some View {
         HStack {
@@ -831,10 +835,16 @@ struct SettingsView: View {
                     } label: {
                         Label("Export PDF report", systemImage: "square.and.arrow.up")
                     }
+                    Toggle("Save workouts to Apple Health", isOn: $healthEnabled)
+                        .onChange(of: healthEnabled) { on in
+                            if on {
+                                vm.health.requestAuth { granted in if !granted { healthEnabled = false } }
+                            }
+                        }
                 } header: {
                     Text("Data")
                 } footer: {
-                    Text("Builds a clean PDF of your profile, zone band, resting-HR and threshold trends, and your workout log — then opens the share sheet so you can Save to Files or send it.")
+                    Text("Export builds a clean PDF (profile, zone band, trends, workout log) and opens the share sheet. Apple Health saving requires a properly signed build (App Store/TestFlight); on a sideloaded build the toggle may not stick.")
                 }
 
                 Section("About") {
