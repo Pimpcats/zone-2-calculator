@@ -69,6 +69,13 @@ final class WorkoutViewModel: ObservableObject {
     let hrm = HeartRateManager()
     let loc = LocationTracker()
     let health = HealthStore()
+    let liveActivity = LiveActivityManager()
+
+    private func liveStatus(_ v: Int) -> String {
+        if v < floorBpm { return "low" }
+        if v > ceilingBpm { return "high" }
+        return "in"
+    }
 
     /// History store, injected from the app, used for auto-save on disconnect.
     var store: WorkoutStore?
@@ -198,6 +205,8 @@ final class WorkoutViewModel: ObservableObject {
         lastHRDate = Date()
         loc.start()
         startTimer()
+        let b = bpm ?? 0
+        liveActivity.start(bpm: b, zone: currentZone, floor: floorBpm, ceiling: ceilingBpm, status: liveStatus(b))
     }
 
     func pause() {
@@ -206,6 +215,7 @@ final class WorkoutViewModel: ObservableObject {
         loc.pause()
         timer?.invalidate()
         lastHRDate = nil
+        liveActivity.end()
     }
 
     func reset() {
@@ -224,6 +234,7 @@ final class WorkoutViewModel: ObservableObject {
         lastHRDate = nil
         loc.reset()
         timer?.invalidate()
+        liveActivity.end()
     }
 
     func resetPeak() { peakBpm = 0 }
@@ -472,6 +483,7 @@ final class WorkoutViewModel: ObservableObject {
         addCalories(bpm: value, dt: dt)
         hrHistory.append(value)
         if hrHistory.count > 14400 { hrHistory.removeFirst() }   // ~4h at 1 Hz
+        liveActivity.update(bpm: value, zone: z, floor: floorBpm, ceiling: ceilingBpm, status: liveStatus(value))
     }
 
     /// HR-based calorie estimate (Keytel et al., 2005).

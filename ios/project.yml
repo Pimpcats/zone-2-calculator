@@ -2,7 +2,7 @@ name: ZoneAlert
 options:
   bundleIdPrefix: com.pimpcats
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "16.2"
   createIntermediateGroups: true
 
 targets:
@@ -11,6 +11,10 @@ targets:
     platform: iOS
     sources:
       - path: ZoneAlert
+      - path: Shared
+    dependencies:
+      - target: ZoneAlertWidget
+        embed: true
     info:
       path: ZoneAlert/Info.plist
       properties:
@@ -19,6 +23,7 @@ targets:
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         CFBundleIconName: AppIcon
         ITSAppUsesNonExemptEncryption: false
+        NSSupportsLiveActivities: true
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
@@ -41,6 +46,30 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         DEVELOPMENT_TEAM: ""
+        CODE_SIGN_STYLE: Manual
+
+  ZoneAlertWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ZoneAlertWidget
+      - path: Shared
+    info:
+      path: ZoneAlertWidget/Info.plist
+      properties:
+        CFBundleDisplayName: Zone Alert
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.pimpcats.zonealert.widget
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: NO
         CODE_SIGN_STYLE: Manual
 
 schemes:
