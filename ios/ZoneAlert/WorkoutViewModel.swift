@@ -274,6 +274,7 @@ final class WorkoutViewModel: ObservableObject {
 
     func start() {
         active = true
+        hrm.alertsEnabled = true     // zone alerts only while actively working out
         sessionSaved = false
         startDate = Date().addingTimeInterval(-accumulated)
         lastHRDate = Date()
@@ -285,6 +286,7 @@ final class WorkoutViewModel: ObservableObject {
 
     func pause() {
         active = false
+        hrm.alertsEnabled = false    // stop zone alerts when paused/ended
         accumulated = duration
         loc.pause()
         timer?.invalidate()
@@ -294,6 +296,7 @@ final class WorkoutViewModel: ObservableObject {
 
     func reset() {
         active = false
+        hrm.alertsEnabled = false    // stop zone alerts once the workout is ended/reset
         accumulated = 0
         duration = 0
         calories = 0

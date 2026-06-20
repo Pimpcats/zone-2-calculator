@@ -32,7 +32,7 @@ final class HeartRateManager: NSObject, ObservableObject {
     /// Alert band, in bpm. Set from the view model based on Max HR + chosen zones.
     var floorBpm: Int = 0          // never drop below this
     var ceilingBpm: Int = 1000     // never go above this
-    var alertsEnabled = true
+    var alertsEnabled = false   // only true while a workout is actively running
     var voiceEnabled = false
     var voiceIdentifier = ""        // chosen AVSpeechSynthesisVoice identifier ("" = system default)
     private let speaker = AVSpeechSynthesizer()
