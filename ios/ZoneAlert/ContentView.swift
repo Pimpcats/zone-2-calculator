@@ -813,8 +813,29 @@ struct SettingsView: View {
     @State private var exportURL: URL?
     @State private var showShare = false
     @State private var showCompat = false
-    @State private var showZones = false
+    @State private var showZoneChart = true
     @AppStorage("healthEnabled") private var healthEnabled = false
+
+    /// One zone's row in the collapsible chart — live bpm range from the current Max HR.
+    private func zoneRow(_ z: Zone) -> some View {
+        let lo = Int(Double(vm.mhr) * z.low)
+        let hi = Int(Double(vm.mhr) * z.high)
+        let current = vm.connected && vm.currentZone == z.id
+        return HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 3).fill(z.color).frame(width: 6, height: 32)
+            Text("Z\(z.id)").font(.headline).foregroundColor(z.color).frame(width: 30, alignment: .leading)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(z.name).font(.callout)
+                Text("\(Int(z.low * 100))–\(Int(z.high * 100))% of Max").font(.caption2).foregroundColor(.secondary)
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 0) {
+                Text("\(lo)–\(hi)").font(.callout.bold().monospacedDigit())
+                Text("bpm").font(.caption2).foregroundColor(.secondary)
+            }
+        }
+        .listRowBackground(current ? z.color.opacity(0.18) : Color(white: 0.12))
+    }
 
     private func intRow(_ label: String, value: Binding<Int>, unit: String) -> some View {
         HStack {
@@ -898,12 +919,15 @@ struct SettingsView: View {
                     if useMeasuredMax {
                         intRow("Max HR", value: $measuredMax, unit: "bpm")
                     }
+                    DisclosureGroup("Heart-rate zones", isExpanded: $showZoneChart) {
+                        ForEach(Array(Zones.all.reversed())) { z in zoneRow(z) }
+                    }
                 } header: {
                     Text("Max heart rate")
                 } footer: {
                     Text(vm.usingMeasuredMax
-                         ? "Using your measured Max HR of \(vm.mhr) bpm."
-                         : "Formula: 220 − \(age) = \(vm.mhr) bpm. Turn on the toggle (or lock a value from the VO₂ Max tab) to use a measured max instead.")
+                         ? "Using your measured Max HR of \(vm.mhr) bpm — every zone above updates live as you change it."
+                         : "Formula: 220 − \(age) = \(vm.mhr) bpm. Turn on the toggle (or lock a value from the VO₂ Max tab) to use a measured max instead. The zones above update live as Max HR changes.")
                 }
 
                 Section {
@@ -1026,9 +1050,6 @@ struct SettingsView: View {
                     } label: {
                         Label("Test background alert (lock screen in 6s)", systemImage: "lock.iphone")
                     }
-                    Button { showZones = true } label: {
-                        Label("View all heart-rate zones", systemImage: "list.bullet.rectangle")
-                    }
                 } header: {
                     Text("Your target band")
                 } footer: {
@@ -1058,65 +1079,6 @@ struct SettingsView: View {
             }
             .sheet(isPresented: $showCompat) {
                 CompatView(hrm: hrm)
-            }
-            .sheet(isPresented: $showZones) {
-                CalculatorView(vm: vm)
-            }
-        }
-    }
-}
-
-// MARK: - Zone 2 calculator
-
-struct CalculatorView: View {
-    @ObservedObject var vm: WorkoutViewModel
-
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            ScrollView {
-                VStack(spacing: 16) {
-                    VStack(spacing: 4) {
-                        Text("Heart-Rate Zones").font(.title2.bold())
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        Text(vm.usingMeasuredMax
-                             ? "Measured Max HR: \(vm.mhr) bpm"
-                             : "Max HR = 220 − age = \(vm.mhr) bpm")
-                            .font(.subheadline).foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    ForEach(Zones.all) { z in
-                        let lo = Int(Double(vm.mhr) * z.low)
-                        let hi = Int(Double(vm.mhr) * z.high)
-                        let current = vm.connected && vm.currentZone == z.id
-                        HStack(spacing: 14) {
-                            Text("Z\(z.id)")
-                                .font(.title3.bold()).foregroundColor(z.color)
-                                .frame(width: 42)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(z.name).font(.callout.bold())
-                                Text("\(Int(z.low*100))–\(Int(z.high*100))% of Max HR")
-                                    .font(.caption).foregroundColor(.secondary)
-                            }
-                            Spacer()
-                            VStack(alignment: .trailing, spacing: 0) {
-                                Text("\(lo)–\(hi)").font(.title3.bold().monospacedDigit())
-                                Text("bpm").font(.caption2).foregroundColor(.secondary)
-                            }
-                        }
-                        .padding(14)
-                        .background(RoundedRectangle(cornerRadius: 12)
-                            .fill(z.color.opacity(current ? 0.25 : 0.10)))
-                        .overlay(RoundedRectangle(cornerRadius: 12)
-                            .stroke(z.color, lineWidth: current ? 2 : 0))
-                    }
-
-                    Text("Zone 2 (\(Int(Double(vm.mhr)*0.60))–\(Int(Double(vm.mhr)*0.70)) bpm) is your aerobic base. Adjust age / Max HR in Settings.")
-                        .font(.caption).foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(18)
             }
         }
     }
