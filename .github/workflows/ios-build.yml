@@ -53,6 +53,13 @@ jobs:
         run: |
           APP_PATH=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -1)
           echo "App: $APP_PATH"
+          # Embed the HealthKit entitlement via an ad-hoc signature so AltStore/Sideloadly
+          # request Health access when they re-sign. Sign nested extensions first (inside-out).
+          for ext in "$APP_PATH"/PlugIns/*.appex; do
+            [ -e "$ext" ] && codesign --force --sign - "$ext"
+          done
+          codesign --force --sign - --entitlements ZoneAlert/ZoneAlert.entitlements "$APP_PATH"
+          echo "Embedded entitlements:"; codesign -d --entitlements :- "$APP_PATH" || true
           rm -rf Payload ZoneAlert.ipa
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/
@@ -90,7 +97,7 @@ jobs:
             "downloadURL": f"{base}/ZoneAlert.ipa",
             "size": size,
             "appPermissions": {
-              "entitlements": [],
+              "entitlements": ["com.apple.developer.healthkit"],
               "privacy": {
                 "NSBluetoothAlwaysUsageDescription": "Connects to your heart-rate strap to track zones and alert you, even when the screen is locked.",
                 "NSLocationWhenInUseUsageDescription": "Measures your distance and pace during a workout.",
@@ -107,7 +114,7 @@ jobs:
               "size": size,
               "minOSVersion": "16.0",
               "appPermissions": {
-                "entitlements": [],
+                "entitlements": ["com.apple.developer.healthkit"],
                 "privacy": {
                   "NSBluetoothAlwaysUsageDescription": "Connects to your heart-rate strap to track zones and alert you, even when the screen is locked.",
                   "NSLocationWhenInUseUsageDescription": "Measures your distance and pace during a workout.",
