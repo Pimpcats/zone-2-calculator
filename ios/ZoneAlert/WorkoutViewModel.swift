@@ -74,6 +74,15 @@ final class WorkoutViewModel: ObservableObject {
     private(set) var ownzoneRRLog: [Double] = []
     var ownzoneHasData: Bool { !ownzoneSamples.isEmpty }
 
+    // Adaptive HRV zones: during a workout, watch DFA-α1 and, once per day, set today's
+    // Zone-2 ceiling to the HR where α1 drops through 0.75 (the aerobic threshold).
+    var adaptiveHRVEnabled = false
+    @Published var adaptiveThresholdHR = 0      // today's detected aerobic-threshold HR (0 = not yet)
+    @Published var adaptiveAlpha1: Double = 0   // live α1 for display while detecting
+    private var adaptiveCleanRR: [Double] = []
+    private var adaptiveAlphaBaseline = 0.0
+    private var adaptiveBelowSince: Date?
+
     /// Guided ramp stages for the threshold test (escalating effort, ~1 min each).
     static let ownzoneStages: [(label: String, seconds: Int)] = [
         ("Easy walk", 60),
@@ -151,8 +160,10 @@ final class WorkoutViewModel: ObservableObject {
 
     init() {
         hrm.onReading = { [weak self] bpm in self?.ingest(bpm: bpm) }
+        hrm.onRR = { [weak self] rrs in self?.handleRR(rrs) }
         hrm.onDisconnect = { [weak self] in self?.scheduleAutoSave(); self?.syncLiveActivity() }
         hrm.onReconnect = { [weak self] in self?.cancelAutoSave(); self?.syncLiveActivity() }
+        loadTodayThreshold()
     }
 
     // MARK: - Auto-save (never lose a workout)
@@ -196,7 +207,7 @@ final class WorkoutViewModel: ObservableObject {
     /// Apply persisted settings and recompute the alert band.
     func apply(age: Int, isMale: Bool, weightKg: Double, restingHR: Int,
                bandZone: Int, mhrOverride: Int?, manualFloor: Int?, manualCeiling: Int?,
-               useHRR: Bool) {
+               useHRR: Bool, adaptiveHRV: Bool = false) {
         self.age = age
         self.isMale = isMale
         self.weightKg = weightKg
@@ -206,6 +217,8 @@ final class WorkoutViewModel: ObservableObject {
         self.manualFloor = manualFloor
         self.manualCeiling = manualCeiling
         self.useHRR = useHRR
+        self.adaptiveHRVEnabled = adaptiveHRV
+        if adaptiveHRV { loadTodayThreshold() }
         hrm.floorBpm = floorBpm
         hrm.ceilingBpm = ceilingBpm
         objectWillChange.send()
@@ -215,13 +228,21 @@ final class WorkoutViewModel: ObservableObject {
     var mhr: Int { mhrOverride ?? Zones.mhr(age: age) }
     var usingMeasuredMax: Bool { mhrOverride != nil }
     var usingManualBand: Bool { manualFloor != nil || manualCeiling != nil }
+    /// True when adaptive HRV zones are on AND we've detected today's threshold.
+    var usingAdaptiveBand: Bool { adaptiveHRVEnabled && adaptiveThresholdHR > 0 }
+
     var floorBpm: Int {
         if let m = manualFloor { return m }
+        if usingAdaptiveBand {
+            let width = Zones.upperBpm(zone: 2, mhr: mhr) - Zones.lowerBpm(zone: 2, mhr: mhr)
+            return max(1, adaptiveThresholdHR - width)
+        }
         return useHRR ? Zones.lowerBpmHRR(zone: bandZone, mhr: mhr, rest: restingHR)
                       : Zones.lowerBpm(zone: bandZone, mhr: mhr)
     }
     var ceilingBpm: Int {
         if let m = manualCeiling { return m }
+        if usingAdaptiveBand { return adaptiveThresholdHR }   // aerobic threshold = top of Zone 2
         return useHRR ? Zones.upperBpmHRR(zone: bandZone, mhr: mhr, rest: restingHR)
                       : Zones.upperBpm(zone: bandZone, mhr: mhr)
     }
@@ -415,7 +436,6 @@ final class WorkoutViewModel: ObservableObject {
         ownzoneRRLog = []
         ownzoneBelowSince = nil
         lastOwnzoneStage = -1
-        hrm.onRR = { [weak self] rrs in self?.ingestRR(rrs) }
         ownzoneTimer?.invalidate()
         let t = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in self?.ownzoneTick() }
         RunLoop.main.add(t, forMode: .common)
@@ -426,7 +446,62 @@ final class WorkoutViewModel: ObservableObject {
         ownzoneTesting = false
         ownzoneTimer?.invalidate()
         ownzoneTimer = nil
-        hrm.onRR = nil
+    }
+
+    // MARK: - Adaptive HRV zones (live daily threshold)
+
+    /// Route incoming R-R intervals: the guided test takes priority; otherwise, if
+    /// adaptive zones are on during a live workout, run the daily threshold detector.
+    private func handleRR(_ rrs: [Double]) {
+        if ownzoneTesting { ingestRR(rrs) }
+        else if adaptiveHRVEnabled && active { adaptiveIngestRR(rrs) }
+    }
+
+    /// Same validated DFA-α1 detector as the guided test, run passively during a
+    /// normal workout. Fires once per day: when α1 (after a healthy easy baseline)
+    /// drops through 0.75 for ~6s, that HR becomes today's Zone-2 ceiling.
+    private func adaptiveIngestRR(_ rrs: [Double]) {
+        guard adaptiveThresholdHR == 0 else { return }   // already detected today
+        for raw in rrs where raw > 300 && raw < 2000 {
+            if let last = adaptiveCleanRR.last, abs(raw - last) / last > 0.20 { continue }
+            adaptiveCleanRR.append(raw)
+        }
+        if adaptiveCleanRR.count > 300 { adaptiveCleanRR.removeFirst(adaptiveCleanRR.count - 300) }
+        guard adaptiveCleanRR.count >= 40, let a = Self.dfaAlpha1(Array(adaptiveCleanRR.suffix(120))) else { return }
+        adaptiveAlpha1 = a
+        if a > adaptiveAlphaBaseline { adaptiveAlphaBaseline = a }
+        guard adaptiveAlphaBaseline > 0.85 else { return }   // need an easy baseline first
+        if a < 0.75 {
+            if let since = adaptiveBelowSince {
+                if Date().timeIntervalSince(since) >= 6, let b = bpm, b > 0 {
+                    saveTodayThreshold(b)
+                    store?.addMeasurement(kind: "ownzone", bpm: b)
+                    hrm.floorBpm = floorBpm
+                    hrm.ceilingBpm = ceilingBpm
+                    objectWillChange.send()
+                }
+            } else {
+                adaptiveBelowSince = Date()
+            }
+        } else if a >= 0.78 {
+            adaptiveBelowSince = nil   // hysteresis
+        }
+    }
+
+    private func loadTodayThreshold() {
+        let d = UserDefaults.standard.object(forKey: "adaptiveThrDate") as? Date
+        if let d, Calendar.current.isDateInToday(d) {
+            adaptiveThresholdHR = UserDefaults.standard.integer(forKey: "adaptiveThrBpm")
+        } else {
+            adaptiveThresholdHR = 0
+        }
+        adaptiveCleanRR = []; adaptiveAlphaBaseline = 0; adaptiveBelowSince = nil
+    }
+
+    private func saveTodayThreshold(_ bpm: Int) {
+        adaptiveThresholdHR = bpm
+        UserDefaults.standard.set(bpm, forKey: "adaptiveThrBpm")
+        UserDefaults.standard.set(Date(), forKey: "adaptiveThrDate")
     }
 
     private func ownzoneTick() {

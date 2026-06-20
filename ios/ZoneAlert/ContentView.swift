@@ -36,6 +36,7 @@ struct ContentView: View {
     @AppStorage("liveBanner") private var liveBanner: Bool = false
     @AppStorage("useMeasuredMax") private var useMeasuredMax: Bool = true
     @AppStorage("measuredMax") private var measuredMax: Int = 190
+    @AppStorage("adaptiveHRV") private var adaptiveHRV: Bool = false
 
     var body: some View {
         TabView {
@@ -78,6 +79,7 @@ struct ContentView: View {
         .onChange(of: useHRR) { _ in applySettings() }
         .onChange(of: voiceEnabled) { _ in applySettings() }
         .onChange(of: voiceId) { _ in applySettings() }
+        .onChange(of: adaptiveHRV) { _ in applySettings() }
         .onChange(of: liveBanner) { _ in applySettings() }
         .onChange(of: useMeasuredMax) { _ in applySettings() }
         .onChange(of: measuredMax) { _ in applySettings() }
@@ -89,7 +91,7 @@ struct ContentView: View {
         let mCeil = customBand ? ceilingBpmManual : nil
         vm.apply(age: age, isMale: isMale, weightKg: weightLbs * 0.453592, restingHR: restingHR,
                  bandZone: bandZone, mhrOverride: override, manualFloor: mFloor, manualCeiling: mCeil,
-                 useHRR: useHRR)
+                 useHRR: useHRR, adaptiveHRV: adaptiveHRV)
         vm.hrm.voiceEnabled = voiceEnabled
         vm.hrm.voiceIdentifier = voiceId
         vm.liveBannerEnabled = liveBanner
@@ -111,6 +113,7 @@ struct WorkoutView: View {
     @Environment(\.requestReview) private var requestReview
     @AppStorage("reviewAsked") private var reviewAsked = false
     @AppStorage("healthEnabled") private var healthEnabled = false
+    @AppStorage("adaptiveHRV") private var adaptiveHRV = false
 
     private var tooLow: Bool { vm.connected && vm.active && (vm.bpm ?? 999) < vm.floorBpm }
     private var tooHigh: Bool { vm.connected && vm.active && (vm.bpm ?? 0) > vm.ceilingBpm }
@@ -128,6 +131,7 @@ struct WorkoutView: View {
                 ScrollView {
                     VStack(spacing: 18) {
                         bandBar
+                        adaptiveCard
                         metricsGrid
                         pager
                     }
@@ -148,6 +152,31 @@ struct WorkoutView: View {
                     .frame(maxHeight: .infinity, alignment: .top)
             }
         }
+    }
+
+    private var adaptiveCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle(isOn: $adaptiveHRV) {
+                Label("Adaptive HRV zones", systemImage: "waveform.path.ecg")
+                    .font(.subheadline.bold())
+            }
+            .tint(.green)
+            Text(adaptiveDescription)
+                .font(.caption2).foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
+    }
+
+    private var adaptiveDescription: String {
+        if !adaptiveHRV {
+            return "Off — zones use your Max HR formula. Turn on to auto-adjust your Zone 2 each day from your heart-rate variability (DFA-α1) while you train."
+        }
+        if vm.adaptiveThresholdHR > 0 {
+            return "On — today's Zone 2 set from your HRV: ceiling \(vm.adaptiveThresholdHR) bpm (floor \(vm.floorBpm))."
+        }
+        return "On — reading your HRV during this workout to find today's threshold. Until it locks in, your Max-HR zones apply. Ramp effort up gradually for a clean read."
     }
 
     private var topBar: some View {
@@ -315,16 +344,14 @@ struct VO2MaxView: View {
                         Text("Max").tag(1)
                         Text("Threshold").tag(2)
                         Text("Recovery").tag(3)
-                        Text("Guide").tag(4)
                     }
                     .pickerStyle(.segmented)
 
                     switch mode {
                     case 0: restingContent
-                    case 1: testContent
                     case 2: ownzoneContent
                     case 3: recoveryContent
-                    default: guideContent
+                    default: testContent
                     }
                 }
                 .padding(18)
@@ -623,6 +650,61 @@ struct VO2MaxView: View {
 
             Text("VO₂ Max here is a rough estimate from the heart-rate-ratio method, not lab-measured. Push to true max only if you're healthy and cleared to. After your max, hit Measure recovery to capture how fast your heart drops.")
                 .font(.caption2).foregroundColor(.secondary)
+
+            Divider().overlay(Color.white.opacity(0.1)).padding(.vertical, 4)
+            Text("Interval training").font(.headline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            intervalWorkoutCard
+            intervalTimerCard
+        }
+    }
+
+    private var intervalWorkoutCard: some View {
+        guideCard(title: "Interval workout", icon: "stopwatch.fill") {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Hard intervals at Zone 4–5 (\(Int(Double(vm.mhr)*0.80))–\(vm.mhr) bpm), with an equal easy recovery, 4–6 times. Each week (or every other week) add 30 seconds to the hard interval.")
+                HStack {
+                    Text("This block's hard interval").font(.subheadline)
+                    Spacer()
+                    Text(intervalText).font(.title3.bold().monospacedDigit()).foregroundColor(.red)
+                }
+                Stepper("Adjust by 30s", value: $vo2IntervalSec, in: 30...900, step: 30)
+                Text("Recovery: same as the interval (\(intervalText)) easy. Bump +30s when this feels repeatable.")
+                    .font(.caption).foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private var intervalTimerCard: some View {
+        guideCard(title: "Interval timer", icon: "timer") {
+            if vm.intervalActive {
+                VStack(spacing: 8) {
+                    HStack {
+                        Text(vm.intervalIsWork ? "HARD" : "EASY")
+                            .font(.title3.bold())
+                            .foregroundColor(vm.intervalIsWork ? .red : .green)
+                        Spacer()
+                        Text("Round \(vm.intervalRound)/\(vm.intervalTotalRounds)").font(.subheadline)
+                    }
+                    Text(WorkoutViewModel.clock(TimeInterval(vm.intervalRemaining)))
+                        .font(.system(size: 44, weight: .bold, design: .rounded))
+                        .monospacedDigit().frame(maxWidth: .infinity)
+                    Button(role: .destructive) { vm.stopIntervals() } label: {
+                        Label("Stop", systemImage: "stop.circle").frame(maxWidth: .infinity)
+                    }.buttonStyle(.bordered)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    Stepper("Rounds: \(vo2Rounds)", value: $vo2Rounds, in: 1...20)
+                    Text("Each round: \(intervalText) hard / \(intervalText) easy, with spoken cues.")
+                        .font(.caption).foregroundColor(.secondary)
+                    Button {
+                        vm.startIntervals(work: vo2IntervalSec, rest: vo2IntervalSec, rounds: vo2Rounds)
+                    } label: {
+                        Label("Start interval timer", systemImage: "play.fill").frame(maxWidth: .infinity)
+                    }.buttonStyle(.borderedProminent).tint(.red)
+                }
+            }
         }
     }
 
@@ -679,85 +761,6 @@ struct VO2MaxView: View {
         String(format: "%d:%02d", vo2IntervalSec / 60, vo2IntervalSec % 60)
     }
 
-    private var guideContent: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("VO₂ Max — the simple version")
-                .font(.title2.bold())
-
-            guideCard(title: "What it is", icon: "lungs.fill") {
-                Text("VO₂ max is the most oxygen your body can use when working flat-out. It's the single best number for aerobic fitness — the higher it is, the longer and harder you can go.")
-            }
-
-            guideCard(title: "How to test your max HR", icon: "bolt.heart.fill") {
-                VStack(alignment: .leading, spacing: 6) {
-                    bullet("1.", "Warm up easy for 10 minutes.")
-                    bullet("2.", "Every minute, increase the effort (run/bike faster or steeper).")
-                    bullet("3.", "Final 1–2 minutes: go all-out until you truly can't hold pace.")
-                    bullet("4.", "Watch the Test tab — your highest reading is your peak.")
-                    bullet("5.", "Tap “Use … as my Max HR” to lock it into your zones.")
-                }
-            }
-
-            guideCard(title: "Your VO₂ workout", icon: "stopwatch.fill") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Do hard intervals at Zone 4–5 (\(Int(Double(vm.mhr)*0.80))–\(vm.mhr) bpm), with an equal easy recovery, 4–6 times. Each week (or every other week) add 30 seconds to the hard interval.")
-                    HStack {
-                        Text("This block's hard interval").font(.subheadline)
-                        Spacer()
-                        Text(intervalText).font(.title3.bold().monospacedDigit()).foregroundColor(.red)
-                    }
-                    Stepper("Adjust by 30s", value: $vo2IntervalSec, in: 30...900, step: 30)
-                    Text("Recovery: same as the interval (\(intervalText)) easy. Bump +30s when this feels repeatable.")
-                        .font(.caption).foregroundColor(.secondary)
-                }
-            }
-
-            guideCard(title: "Interval timer", icon: "timer") {
-                if vm.intervalActive {
-                    VStack(spacing: 8) {
-                        HStack {
-                            Text(vm.intervalIsWork ? "HARD" : "EASY")
-                                .font(.title3.bold())
-                                .foregroundColor(vm.intervalIsWork ? .red : .green)
-                            Spacer()
-                            Text("Round \(vm.intervalRound)/\(vm.intervalTotalRounds)").font(.subheadline)
-                        }
-                        Text(WorkoutViewModel.clock(TimeInterval(vm.intervalRemaining)))
-                            .font(.system(size: 44, weight: .bold, design: .rounded))
-                            .monospacedDigit().frame(maxWidth: .infinity)
-                        Button(role: .destructive) { vm.stopIntervals() } label: {
-                            Label("Stop", systemImage: "stop.circle").frame(maxWidth: .infinity)
-                        }.buttonStyle(.bordered)
-                    }
-                } else {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Stepper("Rounds: \(vo2Rounds)", value: $vo2Rounds, in: 1...20)
-                        Text("Each round: \(intervalText) hard / \(intervalText) easy, with spoken cues.")
-                            .font(.caption).foregroundColor(.secondary)
-                        Button {
-                            vm.startIntervals(work: vo2IntervalSec, rest: vo2IntervalSec, rounds: vo2Rounds)
-                        } label: {
-                            Label("Start interval timer", systemImage: "play.fill").frame(maxWidth: .infinity)
-                        }.buttonStyle(.borderedProminent).tint(.red)
-                    }
-                }
-            }
-
-            guideCard(title: "Example progression", icon: "chart.line.uptrend.xyaxis") {
-                VStack(alignment: .leading, spacing: 4) {
-                    bullet("Wk 1–2", "4 × 2:00 hard / 2:00 easy")
-                    bullet("Wk 3–4", "4 × 2:30 hard / 2:30 easy")
-                    bullet("Wk 5–6", "5 × 3:00 hard / 3:00 easy")
-                    bullet("Then", "keep adding 30s, or add a rep.")
-                }
-            }
-
-            Text("Push to true max only if you're healthy and cleared for hard exercise. Stop if you feel chest pain, dizziness, or faintness.")
-                .font(.caption2).foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
     private func guideCard<Content: View>(title: String, icon: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Label(title, systemImage: icon).font(.headline).foregroundColor(.red)
@@ -766,14 +769,6 @@ struct VO2MaxView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.05)))
-    }
-
-    private func bullet(_ lead: String, _ text: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text(lead).font(.subheadline.bold()).foregroundColor(.secondary).frame(width: 46, alignment: .leading)
-            Text(text).font(.subheadline)
-            Spacer(minLength: 0)
-        }
     }
 
     private func bigStat(title: String, value: String, unit: String, color: Color) -> some View {
