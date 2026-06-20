@@ -82,8 +82,27 @@ struct ZoneGraphView: View {
                     .onAppear { proxy.scrollTo("liveEdge", anchor: .trailing) }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 12))
+                // Faint bpm range per zone, pinned to the left so it stays put while
+                // the timeline scrolls. Recomputes whenever Max HR changes.
+                .overlay(alignment: .topLeading) {
+                    VStack(spacing: 0) {
+                        ForEach(Array((1...5).reversed()), id: \.self) { z in
+                            Text(zoneRange(z))
+                                .font(.caption2.bold().monospacedDigit())
+                                .foregroundColor(.white.opacity(0.5))
+                                .padding(.leading, 6)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .frame(height: bandH)
+                        }
+                    }
+                    .allowsHitTesting(false)
+                }
             }
         }
+    }
+
+    private func zoneRange(_ z: Int) -> String {
+        "\(Zones.lowerBpm(zone: z, mhr: mhr))–\(Zones.upperBpm(zone: z, mhr: mhr))"
     }
 
     private func yFor(_ bpm: Int, _ h: CGFloat) -> CGFloat {

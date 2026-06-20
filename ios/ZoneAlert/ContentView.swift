@@ -2,6 +2,7 @@ import SwiftUI
 import UserNotifications
 import UIKit
 import StoreKit
+import AVFoundation
 
 // MARK: - App version info (auto-set by CI to 1.0.<build#>)
 
@@ -31,6 +32,7 @@ struct ContentView: View {
     @AppStorage("ceilingBpmManual") private var ceilingBpmManual: Int = 133
     @AppStorage("useHRR") private var useHRR: Bool = false
     @AppStorage("voiceEnabled") private var voiceEnabled: Bool = false
+    @AppStorage("voiceId") private var voiceId: String = ""
     @AppStorage("liveBanner") private var liveBanner: Bool = false
     @AppStorage("useMeasuredMax") private var useMeasuredMax: Bool = true
     @AppStorage("measuredMax") private var measuredMax: Int = 190
@@ -51,7 +53,7 @@ struct ContentView: View {
             SettingsView(vm: vm, hrm: vm.hrm, store: store, age: $age, isMale: $isMale, weightLbs: $weightLbs,
                          restingHR: $restingHR, bandZone: $bandZone, customBand: $customBand,
                          floorBpmManual: $floorBpmManual, ceilingBpmManual: $ceilingBpmManual,
-                         useHRR: $useHRR, voiceEnabled: $voiceEnabled, liveBanner: $liveBanner,
+                         useHRR: $useHRR, voiceEnabled: $voiceEnabled, voiceId: $voiceId, liveBanner: $liveBanner,
                          useMeasuredMax: $useMeasuredMax, measuredMax: $measuredMax)
                 .tabItem { Label("Settings", systemImage: "gearshape.fill") }
         }
@@ -75,6 +77,7 @@ struct ContentView: View {
         .onChange(of: ceilingBpmManual) { _ in applySettings() }
         .onChange(of: useHRR) { _ in applySettings() }
         .onChange(of: voiceEnabled) { _ in applySettings() }
+        .onChange(of: voiceId) { _ in applySettings() }
         .onChange(of: liveBanner) { _ in applySettings() }
         .onChange(of: useMeasuredMax) { _ in applySettings() }
         .onChange(of: measuredMax) { _ in applySettings() }
@@ -88,6 +91,7 @@ struct ContentView: View {
                  bandZone: bandZone, mhrOverride: override, manualFloor: mFloor, manualCeiling: mCeil,
                  useHRR: useHRR)
         vm.hrm.voiceEnabled = voiceEnabled
+        vm.hrm.voiceIdentifier = voiceId
         vm.liveBannerEnabled = liveBanner
         vm.syncLiveActivity()
     }
@@ -800,6 +804,7 @@ struct SettingsView: View {
     @Binding var ceilingBpmManual: Int
     @Binding var useHRR: Bool
     @Binding var voiceEnabled: Bool
+    @Binding var voiceId: String
     @Binding var liveBanner: Bool
     @Binding var useMeasuredMax: Bool
     @Binding var measuredMax: Int
@@ -817,6 +822,44 @@ struct SettingsView: View {
             Spacer()
             NumberField(value: value).frame(width: 72)
             Text(unit).foregroundColor(.secondary)
+        }
+    }
+
+    /// English voices installed on this device, best quality first.
+    private var englishVoices: [AVSpeechSynthesisVoice] {
+        AVSpeechSynthesisVoice.speechVoices()
+            .filter { $0.language.hasPrefix("en") }
+            .sorted {
+                $0.quality.rawValue != $1.quality.rawValue
+                    ? $0.quality.rawValue > $1.quality.rawValue   // Premium/Enhanced first
+                    : $0.name < $1.name
+            }
+    }
+
+    private func voiceLabel(_ v: AVSpeechSynthesisVoice) -> String {
+        let q = v.quality == .premium ? "Premium" : (v.quality == .enhanced ? "Enhanced" : "Default")
+        return "\(v.name) · \(q) (\(v.language))"
+    }
+
+    private var voicePicker: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Picker("Voice", selection: $voiceId) {
+                Text("System default").tag("")
+                ForEach(englishVoices, id: \.identifier) { v in
+                    Text(voiceLabel(v)).tag(v.identifier)
+                }
+            }
+            .pickerStyle(.menu)
+
+            Button {
+                vm.hrm.voiceIdentifier = voiceId
+                vm.hrm.say("This is your zone alert voice. You're in zone two.")
+            } label: {
+                Label("Preview voice", systemImage: "speaker.wave.2.fill")
+            }
+
+            Text("Want more natural voices? Download them in iOS Settings → Accessibility → Spoken Content → Voices → English (look for “Enhanced” or “Premium”). They'll appear in this list.")
+                .font(.caption2).foregroundColor(.secondary)
         }
     }
 
@@ -971,6 +1014,7 @@ struct SettingsView: View {
                             .foregroundColor(vm.notifStatus == "On" ? .green : .orange)
                     }
                     Toggle("Speak alerts (voice cues)", isOn: $voiceEnabled)
+                    if voiceEnabled { voicePicker }
                     Toggle("Live heart-rate banner (Lock Screen / Dynamic Island)", isOn: $liveBanner)
                     Button {
                         vm.runTestAlert(onDenied: { showNotifDenied = true })

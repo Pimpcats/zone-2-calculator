@@ -34,6 +34,7 @@ final class HeartRateManager: NSObject, ObservableObject {
     var ceilingBpm: Int = 1000     // never go above this
     var alertsEnabled = true
     var voiceEnabled = false
+    var voiceIdentifier = ""        // chosen AVSpeechSynthesisVoice identifier ("" = system default)
     private let speaker = AVSpeechSynthesizer()
 
     private func speak(_ text: String) {
@@ -41,10 +42,13 @@ final class HeartRateManager: NSObject, ObservableObject {
         say(text)
     }
 
-    /// Speak unconditionally (used by the interval timer cues).
+    /// Speak unconditionally (used by the interval timer cues and the voice preview).
     func say(_ text: String) {
         let u = AVSpeechUtterance(string: text)
         u.rate = 0.5
+        if !voiceIdentifier.isEmpty, let v = AVSpeechSynthesisVoice(identifier: voiceIdentifier) {
+            u.voice = v
+        }
         speaker.speak(u)
     }
 
