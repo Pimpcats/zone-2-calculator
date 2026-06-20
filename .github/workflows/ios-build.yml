@@ -89,13 +89,33 @@ jobs:
             "versionDate": date,
             "downloadURL": f"{base}/ZoneAlert.ipa",
             "size": size,
+            "appPermissions": {
+              "entitlements": [],
+              "privacy": {
+                "NSBluetoothAlwaysUsageDescription": "Connects to your heart-rate strap to track zones and alert you, even when the screen is locked.",
+                "NSLocationWhenInUseUsageDescription": "Measures your distance and pace during a workout.",
+                "NSLocationAlwaysAndWhenInUseUsageDescription": "Keeps recording distance and pace while the screen is locked.",
+                "NSHealthShareUsageDescription": "Reads your all-day steps, resting heart rate, and sleep from Apple Health.",
+                "NSHealthUpdateUsageDescription": "Can save your completed workouts to Apple Health."
+              }
+            },
             "versions": [{
               "version": version,
               "date": date,
               "localizedDescription": "Latest build.",
               "downloadURL": f"{base}/ZoneAlert.ipa",
               "size": size,
-              "minOSVersion": "16.0"
+              "minOSVersion": "16.0",
+              "appPermissions": {
+                "entitlements": [],
+                "privacy": {
+                  "NSBluetoothAlwaysUsageDescription": "Connects to your heart-rate strap to track zones and alert you, even when the screen is locked.",
+                  "NSLocationWhenInUseUsageDescription": "Measures your distance and pace during a workout.",
+                  "NSLocationAlwaysAndWhenInUseUsageDescription": "Keeps recording distance and pace while the screen is locked.",
+                  "NSHealthShareUsageDescription": "Reads your all-day steps, resting heart rate, and sleep from Apple Health.",
+                  "NSHealthUpdateUsageDescription": "Can save your completed workouts to Apple Health."
+                }
+              }
             }]
           }
           source = {
