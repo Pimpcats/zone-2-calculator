@@ -11,9 +11,9 @@ struct Zone: Identifiable {
 
 enum Zones {
     static let all: [Zone] = [
-        Zone(id: 1, name: "Recovery", low: 0.50, high: 0.60, color: Color(red: 0.30, green: 0.79, blue: 0.94)),
-        Zone(id: 2, name: "Aerobic",  low: 0.60, high: 0.70, color: Color(red: 0.28, green: 0.58, blue: 0.94)),
-        Zone(id: 3, name: "Moderate", low: 0.70, high: 0.80, color: Color(red: 0.26, green: 0.67, blue: 0.55)),
+        Zone(id: 1, name: "Recovery", low: 0.50, high: 0.60, color: Color(red: 0.95, green: 0.80, blue: 0.25)),
+        Zone(id: 2, name: "Aerobic",  low: 0.60, high: 0.70, color: Color(red: 0.30, green: 0.78, blue: 0.45)),
+        Zone(id: 3, name: "Moderate", low: 0.70, high: 0.80, color: Color(red: 0.62, green: 0.42, blue: 0.94)),
         Zone(id: 4, name: "Hard",     low: 0.80, high: 0.90, color: Color(red: 0.98, green: 0.52, blue: 0.29)),
         Zone(id: 5, name: "Maximal",  low: 0.90, high: 1.00, color: Color(red: 0.98, green: 0.25, blue: 0.27)),
     ]
