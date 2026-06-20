@@ -36,6 +36,10 @@ targets:
         NSLocationAlwaysAndWhenInUseUsageDescription: "Zone Alert tracks distance and pace in the background so your workout keeps recording while the screen is locked."
         NSHealthShareUsageDescription: "Zone Alert reads your all-day data — steps, resting heart rate, and sleep — from Apple Health to show alongside your workouts."
         NSHealthUpdateUsageDescription: "Zone Alert can save your completed workouts to Apple Health."
+        CFBundleURLTypes:
+          - CFBundleURLName: com.pimpcats.zonealert.health
+            CFBundleURLSchemes:
+              - zonealert
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.pimpcats.zonealert

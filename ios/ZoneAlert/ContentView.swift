@@ -19,7 +19,7 @@ enum AppInfo {
 struct ContentView: View {
     @StateObject private var vm = WorkoutViewModel()
     @StateObject private var store = WorkoutStore()
-    @StateObject private var appleHealth = AppleHealthService()
+    @StateObject private var healthImport = HealthImportStore()
 
     @AppStorage("age") private var age: Int = 40
     @AppStorage("isMale") private var isMale: Bool = true
@@ -46,7 +46,7 @@ struct ContentView: View {
                 .tabItem { Label("VO2 Max", systemImage: "lungs.fill") }
             ProgressTabView(store: store)
                 .tabItem { Label("Progress", systemImage: "chart.bar.fill") }
-            AppleHealthView(service: appleHealth)
+            AppleHealthView(store: healthImport)
                 .tabItem { Label("Health", systemImage: "heart.text.square.fill") }
             SettingsView(vm: vm, hrm: vm.hrm, store: store, age: $age, isMale: $isMale, weightLbs: $weightLbs,
                          restingHR: $restingHR, bandZone: $bandZone, customBand: $customBand,
@@ -57,6 +57,7 @@ struct ContentView: View {
         }
         .tint(.red)
         .preferredColorScheme(.dark)
+        .onOpenURL { url in healthImport.ingest(url) }   // Shortcuts bridge: zonealert://health?…
         .onAppear { vm.store = store; applySettings(); requestNotifications(); vm.loc.requestAuthorization() }
         .onChange(of: age) { _ in applySettings() }
         .onChange(of: isMale) { _ in applySettings() }
