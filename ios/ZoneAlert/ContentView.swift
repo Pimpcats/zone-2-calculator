@@ -37,6 +37,8 @@ struct ContentView: View {
     @AppStorage("useMeasuredMax") private var useMeasuredMax: Bool = true
     @AppStorage("measuredMax") private var measuredMax: Int = 190
     @AppStorage("adaptiveHRV") private var adaptiveHRV: Bool = false
+    @AppStorage("indoorMode") private var indoorMode: Bool = false
+    @AppStorage("treadmillMph") private var treadmillMph: Double = 3.0
 
     var body: some View {
         TabView {
@@ -80,6 +82,8 @@ struct ContentView: View {
         .onChange(of: voiceEnabled) { _ in applySettings() }
         .onChange(of: voiceId) { _ in applySettings() }
         .onChange(of: adaptiveHRV) { _ in applySettings() }
+        .onChange(of: indoorMode) { _ in applySettings() }
+        .onChange(of: treadmillMph) { _ in applySettings() }
         .onChange(of: liveBanner) { _ in applySettings() }
         .onChange(of: useMeasuredMax) { _ in applySettings() }
         .onChange(of: measuredMax) { _ in applySettings() }
@@ -91,7 +95,8 @@ struct ContentView: View {
         let mCeil = customBand ? ceilingBpmManual : nil
         vm.apply(age: age, isMale: isMale, weightKg: weightLbs * 0.453592, restingHR: restingHR,
                  bandZone: bandZone, mhrOverride: override, manualFloor: mFloor, manualCeiling: mCeil,
-                 useHRR: useHRR, adaptiveHRV: adaptiveHRV)
+                 useHRR: useHRR, adaptiveHRV: adaptiveHRV,
+                 indoorMode: indoorMode, treadmillMph: treadmillMph)
         vm.hrm.voiceEnabled = voiceEnabled
         vm.hrm.voiceIdentifier = voiceId
         vm.liveBannerEnabled = liveBanner
@@ -114,6 +119,8 @@ struct WorkoutView: View {
     @AppStorage("reviewAsked") private var reviewAsked = false
     @AppStorage("healthEnabled") private var healthEnabled = false
     @AppStorage("adaptiveHRV") private var adaptiveHRV = false
+    @AppStorage("indoorMode") private var indoorMode = false
+    @AppStorage("treadmillMph") private var treadmillMph: Double = 3.0
 
     private var tooLow: Bool { vm.connected && vm.active && (vm.bpm ?? 999) < vm.floorBpm }
     private var tooHigh: Bool { vm.connected && vm.active && (vm.bpm ?? 0) > vm.ceilingBpm }
@@ -132,6 +139,7 @@ struct WorkoutView: View {
                     VStack(spacing: 18) {
                         bandBar
                         adaptiveCard
+                        indoorCard
                         metricsGrid
                         pager
                     }
@@ -177,6 +185,33 @@ struct WorkoutView: View {
             return "On — today's Zone 2 set from your HRV: ceiling \(vm.adaptiveThresholdHR) bpm (floor \(vm.floorBpm))."
         }
         return "On — reading your HRV during this workout to find today's threshold. Until it locks in, your Max-HR zones apply. Ramp effort up gradually for a clean read."
+    }
+
+    private var indoorCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle(isOn: $indoorMode) {
+                Label("Indoor / treadmill", systemImage: "figure.walk.motion")
+                    .font(.subheadline.bold())
+            }
+            .tint(.orange)
+            if indoorMode {
+                Stepper(value: $treadmillMph, in: 0.5...15, step: 0.1) {
+                    HStack {
+                        Text("Treadmill speed")
+                        Spacer()
+                        Text(String(format: "%.1f mph", treadmillMph))
+                            .font(.callout.bold().monospacedDigit()).foregroundColor(.orange)
+                    }
+                }
+                Text("Distance & pace come from this speed instead of GPS. Calories stay heart-rate based.")
+                    .font(.caption2).foregroundColor(.secondary)
+            } else {
+                Text("Off — distance & pace use GPS (for outdoor walks/runs).")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
     }
 
     private var topBar: some View {

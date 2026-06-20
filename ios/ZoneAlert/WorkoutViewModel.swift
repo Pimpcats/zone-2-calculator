@@ -54,6 +54,10 @@ final class WorkoutViewModel: ObservableObject {
     private(set) var manualFloor: Int? = nil   // direct bpm floor (manual band mode)
     private(set) var manualCeiling: Int? = nil // direct bpm ceiling (manual band mode)
     private(set) var useHRR: Bool = false      // Heart-Rate Reserve (adaptive) zone math
+    private(set) var indoorMode: Bool = false   // treadmill: distance/pace from set speed, not GPS
+    private(set) var treadmillMph: Double = 3.0
+    private var indoorDistMiles = 0.0
+    private var lastIndoorDuration = 0.0
 
     // OwnZone-style HRV warm-up test
     @Published var ownzoneTesting = false
@@ -207,7 +211,8 @@ final class WorkoutViewModel: ObservableObject {
     /// Apply persisted settings and recompute the alert band.
     func apply(age: Int, isMale: Bool, weightKg: Double, restingHR: Int,
                bandZone: Int, mhrOverride: Int?, manualFloor: Int?, manualCeiling: Int?,
-               useHRR: Bool, adaptiveHRV: Bool = false) {
+               useHRR: Bool, adaptiveHRV: Bool = false,
+               indoorMode: Bool = false, treadmillMph: Double = 3.0) {
         self.age = age
         self.isMale = isMale
         self.weightKg = weightKg
@@ -217,6 +222,9 @@ final class WorkoutViewModel: ObservableObject {
         self.manualFloor = manualFloor
         self.manualCeiling = manualCeiling
         self.useHRR = useHRR
+        self.indoorMode = indoorMode
+        self.treadmillMph = max(0.1, treadmillMph)
+        if indoorMode { lastIndoorDuration = duration }   // resync so toggling on doesn't jump
         self.adaptiveHRVEnabled = adaptiveHRV
         if adaptiveHRV { loadTodayThreshold() }
         hrm.floorBpm = floorBpm
@@ -247,8 +255,11 @@ final class WorkoutViewModel: ObservableObject {
                       : Zones.upperBpm(zone: bandZone, mhr: mhr)
     }
 
-    var distanceMiles: Double { loc.distanceMeters / 1609.344 }
+    var distanceMiles: Double {
+        indoorMode ? indoorDistMiles : loc.distanceMeters / 1609.344
+    }
     var paceSecPerMile: Double? {
+        if indoorMode { return treadmillMph > 0 ? 3600.0 / treadmillMph : nil }
         guard distanceMiles > 0.02, duration > 0 else { return nil }
         return duration / distanceMiles
     }
@@ -278,7 +289,8 @@ final class WorkoutViewModel: ObservableObject {
         sessionSaved = false
         startDate = Date().addingTimeInterval(-accumulated)
         lastHRDate = Date()
-        loc.start()
+        lastIndoorDuration = duration
+        if !indoorMode { loc.start() }   // treadmill: skip GPS, distance comes from set speed
         startTimer()
         let b = bpm ?? 0
         liveActivity.start(bpm: b, zone: currentZone, floor: floorBpm, ceiling: ceilingBpm, status: liveStatus(b))
@@ -300,6 +312,8 @@ final class WorkoutViewModel: ObservableObject {
         accumulated = 0
         duration = 0
         calories = 0
+        indoorDistMiles = 0
+        lastIndoorDuration = 0
         timeInZone = Array(repeating: 0, count: 6)
         hrHistory = []
         peakBpm = 0
@@ -724,6 +738,11 @@ final class WorkoutViewModel: ObservableObject {
     private func tick() {
         guard active, let s = startDate else { return }
         duration = Date().timeIntervalSince(s)
+        if indoorMode {
+            let d = duration - lastIndoorDuration
+            if d > 0 { indoorDistMiles += treadmillMph * d / 3600.0 }  // integrate speed × time
+            lastIndoorDuration = duration
+        }
     }
 
     // MARK: - Formatting helpers
