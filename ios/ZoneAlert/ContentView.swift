@@ -19,7 +19,7 @@ enum AppInfo {
 struct ContentView: View {
     @StateObject private var vm = WorkoutViewModel()
     @StateObject private var store = WorkoutStore()
-    @StateObject private var fitbit = FitbitService()
+    @StateObject private var appleHealth = AppleHealthService()
 
     @AppStorage("age") private var age: Int = 40
     @AppStorage("isMale") private var isMale: Bool = true
@@ -37,7 +37,7 @@ struct ContentView: View {
 
     var body: some View {
         TabView {
-            WorkoutView(vm: vm, store: store, fitbit: fitbit)
+            WorkoutView(vm: vm, store: store)
                 .tabItem { Label("Workout", systemImage: "figure.run") }
             VO2MaxView(vm: vm, restingHR: $restingHR,
                        useMeasuredMax: $useMeasuredMax, measuredMax: $measuredMax,
@@ -46,8 +46,8 @@ struct ContentView: View {
                 .tabItem { Label("VO2 Max", systemImage: "lungs.fill") }
             ProgressTabView(store: store)
                 .tabItem { Label("Progress", systemImage: "chart.bar.fill") }
-            FitbitView(fitbit: fitbit)
-                .tabItem { Label("Fitbit", systemImage: "circle.hexagongrid.fill") }
+            AppleHealthView(service: appleHealth)
+                .tabItem { Label("Health", systemImage: "heart.text.square.fill") }
             SettingsView(vm: vm, hrm: vm.hrm, store: store, age: $age, isMale: $isMale, weightLbs: $weightLbs,
                          restingHR: $restingHR, bandZone: $bandZone, customBand: $customBand,
                          floorBpmManual: $floorBpmManual, ceilingBpmManual: $ceilingBpmManual,
@@ -101,7 +101,6 @@ struct ContentView: View {
 struct WorkoutView: View {
     @ObservedObject var vm: WorkoutViewModel
     @ObservedObject var store: WorkoutStore
-    @ObservedObject var fitbit: FitbitService
     @State private var savedFlash = false
     @State private var graphTab = 0
     @Environment(\.requestReview) private var requestReview
@@ -165,7 +164,6 @@ struct WorkoutView: View {
                     let record = vm.makeRecord()
                     store.add(record)
                     if healthEnabled { vm.health.save(record) }
-                    if fitbit.connected { fitbit.sync() }   // pull fresh Fitbit data (kept separate)
                     vm.reset()
                     withAnimation { savedFlash = true }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
