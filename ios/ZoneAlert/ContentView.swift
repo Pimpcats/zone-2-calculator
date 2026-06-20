@@ -1082,29 +1082,6 @@ struct CalculatorView: View {
 
 struct ProgressTabView: View {
     @ObservedObject var store: WorkoutStore
-    @AppStorage("dailyGoalMin") private var dailyGoalMin = 30
-
-    private var goalsCard: some View {
-        let todayMin = store.minutes(on: Date())
-        let streak = store.currentStreak(goalMinutes: dailyGoalMin)
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Daily goal").font(.subheadline.bold()).foregroundColor(.red)
-                Spacer()
-                Text("🔥 \(streak)-day streak").font(.subheadline.bold())
-            }
-            ProgressView(value: min(todayMin, Double(dailyGoalMin)), total: Double(max(dailyGoalMin, 1)))
-                .tint(.red)
-            HStack {
-                Text("\(Int(todayMin)) / \(dailyGoalMin) min today")
-                    .font(.caption).foregroundColor(.secondary)
-                Spacer()
-                Stepper("Goal", value: $dailyGoalMin, in: 5...180, step: 5).labelsHidden()
-            }
-        }
-        .padding(14)
-        .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.05)))
-    }
 
     var body: some View {
         ZStack {
@@ -1120,10 +1097,6 @@ struct ProgressTabView: View {
                         totalsCard(title: "Today", t: store.todayTotals)
                         totalsCard(title: "This week", t: store.weekTotals)
                     }
-
-                    goalsCard
-
-                    CalendarView(store: store)
 
                     weeklyChart
 
