@@ -21,12 +21,14 @@ everything stays on your device. We do not collect, transmit, sell, or share you
 - No analytics, no advertising, no tracking, no third‑party SDKs.
 - We never sell or share your information with anyone.
 
+## Weight tracker
+The Weight tab stores your logged weight, calories eaten/burned, and goal **only on your
+device** to chart your trend and project weekly loss (1 lb ≈ 3,500 kcal). No network, no
+account.
+
 ## Optional: Apple Health
-If you choose to connect Apple Health (Health tab), the app reads *your own* all-day data
-— steps, active calories, resting heart rate, and sleep — **directly from Apple Health on
-your device**. This makes **no network connection**: nothing is uploaded, and there is no
-account or login. The Health data is kept **separate** from your heart-rate-strap workout
-data and never leaves your phone. You can revoke access at any time in iOS Settings →
+If you turn it on, Zone Alert can **save your completed workouts** to Apple Health on your
+device. This makes no network connection. You can revoke access any time in iOS Settings →
 Privacy & Security → Health.
 
 ## Data leaving your device

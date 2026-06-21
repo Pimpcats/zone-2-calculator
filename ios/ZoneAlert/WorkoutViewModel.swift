@@ -134,7 +134,7 @@ final class WorkoutViewModel: ObservableObject {
     /// Show the Live Activity during a workout, or any time the banner option is on
     /// and a strap is connected; otherwise end it.
     func syncLiveActivity() {
-        if active || (liveBannerEnabled && connected) {
+        if active && liveBannerEnabled {   // Island/banner only during an active workout
             let b = bpm ?? 0
             liveActivity.start(bpm: b, zone: currentZone, floor: floorBpm, ceiling: ceilingBpm, status: liveStatus(b))
         } else {
@@ -168,6 +168,7 @@ final class WorkoutViewModel: ObservableObject {
         hrm.onDisconnect = { [weak self] in self?.scheduleAutoSave(); self?.syncLiveActivity() }
         hrm.onReconnect = { [weak self] in self?.cancelAutoSave(); self?.syncLiveActivity() }
         loadTodayThreshold()
+        liveActivity.endOrphaned()   // clear any Island/banner left over from a prior session
     }
 
     // MARK: - Auto-save (never lose a workout)
@@ -292,8 +293,7 @@ final class WorkoutViewModel: ObservableObject {
         lastIndoorDuration = duration
         if !indoorMode { loc.start() }   // treadmill: skip GPS, distance comes from set speed
         startTimer()
-        let b = bpm ?? 0
-        liveActivity.start(bpm: b, zone: currentZone, floor: floorBpm, ceiling: ceilingBpm, status: liveStatus(b))
+        syncLiveActivity()
     }
 
     func pause() {
@@ -700,7 +700,7 @@ final class WorkoutViewModel: ObservableObject {
         if restingTesting && value >= 30 && (restingLow == 0 || value < restingLow) { restingLow = value }
         let z = Zones.zone(forBpm: value, mhr: mhr)
         currentZone = z
-        if active || (liveBannerEnabled && connected) {
+        if active && liveBannerEnabled {
             liveActivity.start(bpm: value, zone: z, floor: floorBpm, ceiling: ceilingBpm, status: liveStatus(value))
         }
         guard active else { return }

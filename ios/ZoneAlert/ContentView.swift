@@ -20,7 +20,7 @@ enum AppInfo {
 struct ContentView: View {
     @StateObject private var vm = WorkoutViewModel()
     @StateObject private var store = WorkoutStore()
-    @StateObject private var healthImport = HealthImportStore()
+    @StateObject private var weightStore = WeightStore()
 
     @AppStorage("age") private var age: Int = 40
     @AppStorage("isMale") private var isMale: Bool = true
@@ -51,8 +51,8 @@ struct ContentView: View {
                 .tabItem { Label("VO2 Max", systemImage: "lungs.fill") }
             ProgressTabView(store: store)
                 .tabItem { Label("Progress", systemImage: "chart.bar.fill") }
-            AppleHealthView(store: healthImport)
-                .tabItem { Label("Health", systemImage: "heart.text.square.fill") }
+            WeightView(store: weightStore, workouts: store, weightLbs: $weightLbs)
+                .tabItem { Label("Weight", systemImage: "scalemass.fill") }
             SettingsView(vm: vm, hrm: vm.hrm, store: store, age: $age, isMale: $isMale, weightLbs: $weightLbs,
                          restingHR: $restingHR, bandZone: $bandZone, customBand: $customBand,
                          floorBpmManual: $floorBpmManual, ceilingBpmManual: $ceilingBpmManual,
@@ -62,7 +62,6 @@ struct ContentView: View {
         }
         .tint(.red)
         .preferredColorScheme(.dark)
-        .onOpenURL { url in healthImport.ingest(url) }   // Shortcuts bridge: zonealert://health?…
         .onAppear { vm.store = store; applySettings(); requestNotifications(); vm.loc.requestAuthorization() }
         .onChange(of: age) { _ in applySettings() }
         .onChange(of: isMale) { _ in applySettings() }
@@ -1092,7 +1091,7 @@ struct SettingsView: View {
                     }
                     Toggle("Speak alerts (voice cues)", isOn: $voiceEnabled)
                     if voiceEnabled { voicePicker }
-                    Toggle("Live heart-rate banner (Lock Screen / Dynamic Island)", isOn: $liveBanner)
+                    Toggle("Live heart-rate banner while working out (Lock Screen / Dynamic Island)", isOn: $liveBanner)
                     Button {
                         vm.runTestAlert(onDenied: { showNotifDenied = true })
                     } label: {

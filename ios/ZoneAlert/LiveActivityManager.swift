@@ -32,4 +32,13 @@ final class LiveActivityManager {
         Task { await activity.end(nil, dismissalPolicy: .immediate) }
         self.activity = nil
     }
+
+    /// Dismiss any leftover activities (e.g. the app was killed mid-workout, leaving the
+    /// Island/banner stuck). Safe to call on launch since a workout never survives a kill.
+    func endOrphaned() {
+        for a in Activity<ZoneActivityAttributes>.activities {
+            Task { await a.end(nil, dismissalPolicy: .immediate) }
+        }
+        activity = nil
+    }
 }
