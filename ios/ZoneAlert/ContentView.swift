@@ -137,6 +137,7 @@ struct WorkoutView: View {
                 topBar
                 ScrollView {
                     VStack(spacing: 18) {
+                        zoneIndicator
                         bandBar
                         adaptiveCard
                         indoorCard
@@ -260,6 +261,28 @@ struct WorkoutView: View {
         }
     }
 
+    /// Color of the zone you're currently in (matches the in-app zone bands).
+    private var zoneTint: Color {
+        vm.currentZone >= 1 ? Zones.all[vm.currentZone - 1].color : Color(white: 0.6)
+    }
+
+    /// A badge at the top showing the current zone in its real color.
+    private var zoneIndicator: some View {
+        let z = vm.currentZone
+        let name = z >= 1 ? Zones.all[z - 1].name : "Below Zone 1"
+        return HStack(spacing: 8) {
+            Circle().fill(zoneTint).frame(width: 12, height: 12)
+            Text(z >= 1 ? "Zone \(z) · \(name)" : name)
+                .font(.headline.bold()).foregroundColor(zoneTint)
+            Spacer()
+            Text(vm.bpm.map { "\($0) bpm" } ?? "-- bpm")
+                .font(.subheadline.bold().monospacedDigit()).foregroundColor(zoneTint)
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(zoneTint.opacity(0.15)))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(zoneTint.opacity(0.5), lineWidth: 1))
+    }
+
     private func bandPill(title: String, value: Int, color: Color, active: Bool) -> some View {
         VStack(spacing: 2) {
             Text(title).font(.caption2).foregroundColor(.secondary)
@@ -284,7 +307,7 @@ struct WorkoutView: View {
                            value: WorkoutViewModel.pace(vm.paceSecPerMile), unit: "min/mi")
                 MetricCell(icon: "heart.fill", title: "Heart rate",
                            value: vm.bpm.map(String.init) ?? "--", unit: "bpm",
-                           valueColor: Color(red: 0.30, green: 0.66, blue: 1.0))
+                           valueColor: zoneTint)
             }
             MetricCell(icon: "timer", title: "Duration",
                        value: WorkoutViewModel.clock(vm.duration), unit: "")
