@@ -51,7 +51,7 @@ struct ContentView: View {
                 .tabItem { Label("VO2 Max", systemImage: "lungs.fill") }
             ProgressTabView(store: store)
                 .tabItem { Label("Progress", systemImage: "chart.bar.fill") }
-            WeightView(store: weightStore, workouts: store, weightLbs: $weightLbs)
+            WeightView(store: weightStore, workouts: store)
                 .tabItem { Label("Weight", systemImage: "scalemass.fill") }
             SettingsView(vm: vm, hrm: vm.hrm, store: store, age: $age, isMale: $isMale, weightLbs: $weightLbs,
                          restingHR: $restingHR, bandZone: $bandZone, customBand: $customBand,
