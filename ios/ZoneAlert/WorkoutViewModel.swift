@@ -514,8 +514,7 @@ final class WorkoutViewModel: ObservableObject {
     /// drops through 0.75 for ~6s, that HR becomes today's Zone-2 ceiling.
     private func adaptiveIngestRR(_ rrs: [Double]) {
         guard adaptiveThresholdHR == 0 else { return }   // already detected today
-        for raw in rrs where raw > 300 && raw < 2000 {
-            if let last = adaptiveCleanRR.last, abs(raw - last) / last > 0.20 { continue }
+        for raw in rrs where Self.acceptBeat(raw, recentClean: adaptiveCleanRR) {
             adaptiveCleanRR.append(raw)
         }
         if adaptiveCleanRR.count > 300 { adaptiveCleanRR.removeFirst(adaptiveCleanRR.count - 300) }
@@ -581,9 +580,7 @@ final class WorkoutViewModel: ObservableObject {
     /// aerobic threshold as the heart rate where DFA-α1 drops through 0.75.
     private func ingestRR(_ rrs: [Double]) {
         guard ownzoneTesting else { return }
-        for raw in rrs where raw > 300 && raw < 2000 {
-            // Artifact correction: reject beats that jump >20% from the last good beat.
-            if let last = cleanRR.last, abs(raw - last) / last > 0.20 { continue }
+        for raw in rrs where Self.acceptBeat(raw, recentClean: cleanRR) {
             cleanRR.append(raw)
             ownzoneRRLog.append(raw)
         }
@@ -616,6 +613,18 @@ final class WorkoutViewModel: ObservableObject {
                 ownzoneBelowSince = nil   // hysteresis
             }
         }
+    }
+
+    /// Artifact correction for R-R beats. Accepts a beat only if it's physiological
+    /// (300–2000 ms) and within 12% of the **median of the recent clean beats**. The
+    /// median reference (vs. the previous single beat) catches the ±13–17% glitches that
+    /// the old 20%-vs-previous check let through, and won't cascade when a bad beat sneaks in.
+    static func acceptBeat(_ raw: Double, recentClean: [Double]) -> Bool {
+        guard raw > 300, raw < 2000 else { return false }
+        guard !recentClean.isEmpty else { return true }
+        let window = recentClean.suffix(7).sorted()
+        let median = window[window.count / 2]
+        return abs(raw - median) / median <= 0.12
     }
 
     /// Detrended Fluctuation Analysis short-term scaling exponent (α1), box sizes 4–16 beats.
