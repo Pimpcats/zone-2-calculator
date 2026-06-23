@@ -386,7 +386,7 @@ struct VO2MaxView: View {
     private var vo2: Double { vm.vo2maxEstimate(usingMax: hrMax) }
 
     @State private var mode = 1
-    @AppStorage("vo2IntervalSec") private var vo2IntervalSec = 120
+    @AppStorage("vo2IntervalSec") private var vo2IntervalSec = 30
     @AppStorage("vo2Rounds") private var vo2Rounds = 5
     @State private var rawURLs: [URL] = []
     @State private var showRawShare = false
@@ -717,17 +717,15 @@ struct VO2MaxView: View {
     }
 
     private var intervalWorkoutCard: some View {
-        guideCard(title: "Interval workout", icon: "stopwatch.fill") {
+        guideCard(title: "VO₂ intervals", icon: "stopwatch.fill") {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Hard intervals at Zone 4–5 (\(Int(Double(vm.mhr)*0.80))–\(vm.mhr) bpm), with an equal easy recovery, 4–6 times. Each week (or every other week) add 30 seconds to the hard interval.")
+                Text("Go hard (Zone 4–5, \(Int(Double(vm.mhr)*0.80))–\(vm.mhr) bpm) for the interval below, then ease off and let your heart rate fall back to Zone 2 (≤ \(vm.zone2Ceiling) bpm). If you recover within the interval time, you're ready to add 30 seconds.")
                 HStack {
-                    Text("This block's hard interval").font(.subheadline)
+                    Text("Hard interval").font(.subheadline)
                     Spacer()
                     Text(intervalText).font(.title3.bold().monospacedDigit()).foregroundColor(.red)
                 }
                 Stepper("Adjust by 30s", value: $vo2IntervalSec, in: 30...900, step: 30)
-                Text("Recovery: same as the interval (\(intervalText)) easy. Bump +30s when this feels repeatable.")
-                    .font(.caption).foregroundColor(.secondary)
             }
         }
     }
@@ -737,32 +735,64 @@ struct VO2MaxView: View {
             if vm.intervalActive {
                 VStack(spacing: 8) {
                     HStack {
-                        Text(vm.intervalIsWork ? "HARD" : "EASY")
-                            .font(.title3.bold())
+                        Text(vm.intervalIsWork ? "GO HARD" : "RECOVER TO ZONE 2")
+                            .font(.headline.bold())
                             .foregroundColor(vm.intervalIsWork ? .red : .green)
                         Spacer()
                         Text("Round \(vm.intervalRound)/\(vm.intervalTotalRounds)").font(.subheadline)
                     }
-                    Text(WorkoutViewModel.clock(TimeInterval(vm.intervalRemaining)))
-                        .font(.system(size: 44, weight: .bold, design: .rounded))
-                        .monospacedDigit().frame(maxWidth: .infinity)
+                    if vm.intervalIsWork {
+                        Text(WorkoutViewModel.clock(TimeInterval(vm.intervalRemaining)))
+                            .font(.system(size: 44, weight: .bold, design: .rounded)).monospacedDigit()
+                            .frame(maxWidth: .infinity)
+                        Text("Push hard until the timer hits zero.").font(.caption).foregroundColor(.secondary)
+                    } else {
+                        Text("\(vm.intervalRecoverElapsed)s")
+                            .font(.system(size: 44, weight: .bold, design: .rounded)).monospacedDigit()
+                            .frame(maxWidth: .infinity).foregroundColor(.green)
+                        Text("Ease off — recovering until HR ≤ \(vm.zone2Ceiling). Beat the interval (\(intervalText)).")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+                    Text("HR \(vm.bpm.map(String.init) ?? "--") bpm")
+                        .font(.subheadline.bold()).foregroundColor(.secondary)
                     Button(role: .destructive) { vm.stopIntervals() } label: {
                         Label("Stop", systemImage: "stop.circle").frame(maxWidth: .infinity)
                     }.buttonStyle(.bordered)
                 }
             } else {
                 VStack(alignment: .leading, spacing: 8) {
+                    if vm.intervalHasResult { resultBanner }
                     Stepper("Rounds: \(vo2Rounds)", value: $vo2Rounds, in: 1...20)
-                    Text("Each round: \(intervalText) hard / \(intervalText) easy, with spoken cues.")
+                    Text("Each round: \(intervalText) hard, then recover to Zone 2 (≤ \(vm.zone2Ceiling) bpm). Needs the strap connected.")
                         .font(.caption).foregroundColor(.secondary)
                     Button {
-                        vm.startIntervals(work: vo2IntervalSec, rest: vo2IntervalSec, rounds: vo2Rounds)
+                        vm.startIntervals(work: vo2IntervalSec, rounds: vo2Rounds)
                     } label: {
-                        Label("Start interval timer", systemImage: "play.fill").frame(maxWidth: .infinity)
+                        Label("Start VO₂ intervals", systemImage: "play.fill").frame(maxWidth: .infinity)
                     }.buttonStyle(.borderedProminent).tint(.red)
+                    .disabled(!vm.connected)
                 }
             }
         }
+    }
+
+    private var resultBanner: some View {
+        let ok = vm.intervalRecoveredInTime
+        return VStack(alignment: .leading, spacing: 6) {
+            Text(ok ? "✓ Recovered in \(vm.intervalLastRecoverSec)s — under your \(intervalText) interval"
+                    : "✗ Recovery took \(vm.intervalLastRecoverSec)s — longer than your \(intervalText) interval")
+                .font(.subheadline.bold()).foregroundColor(ok ? .green : .orange)
+            Text(ok ? "You're ready to step up." : "Keep this interval until you recover in time.")
+                .font(.caption).foregroundColor(.secondary)
+            if ok {
+                Button { vo2IntervalSec = min(900, vo2IntervalSec + 30) } label: {
+                    Label("Add 30s to the interval", systemImage: "plus.circle.fill").font(.caption)
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10).fill((ok ? Color.green : Color.orange).opacity(0.15)))
     }
 
     private var recoveryContent: some View {

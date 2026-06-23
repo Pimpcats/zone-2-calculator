@@ -34,13 +34,16 @@ final class WorkoutViewModel: ObservableObject {
     @Published var recoveryResult = 0      // bpm dropped in 60s
     private var recoveryTimer: Timer?
 
-    // Interval timer (VO2 / threshold intervals)
+    // Interval timer (VO2): hard for a set time, then recover until HR returns to Zone 2.
     @Published var intervalActive = false
-    @Published var intervalIsWork = true
-    @Published var intervalRemaining = 0
+    @Published var intervalIsWork = true       // true = hard phase, false = recovering
+    @Published var intervalRemaining = 0        // hard-phase countdown
     @Published var intervalRound = 0
-    private var intervalWorkSec = 120
-    private var intervalRestSec = 120
+    @Published var intervalRecoverElapsed = 0   // seconds spent recovering this round
+    @Published var intervalLastRecoverSec = 0   // recovery time of the last completed round
+    @Published var intervalRecoveredInTime = false
+    @Published var intervalHasResult = false
+    private var intervalWorkSec = 30
     private var intervalRounds = 5
     private var intervalTimer: Timer?
 
@@ -360,16 +363,22 @@ final class WorkoutViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Interval timer
+    // MARK: - Interval timer (VO2: hard interval → recover to Zone 2)
 
     var intervalTotalRounds: Int { intervalRounds }
+    /// Top of Zone 2 — the HR you must drop back to during recovery.
+    var zone2Ceiling: Int { Zones.upperBpm(zone: 2, mhr: mhr) }
 
-    func startIntervals(work: Int, rest: Int, rounds: Int) {
-        intervalWorkSec = work; intervalRestSec = rest; intervalRounds = max(1, rounds)
+    func startIntervals(work: Int, rounds: Int) {
+        intervalWorkSec = max(5, work); intervalRounds = max(1, rounds)
         intervalActive = true
         intervalIsWork = true
         intervalRound = 1
-        intervalRemaining = work
+        intervalRemaining = intervalWorkSec
+        intervalRecoverElapsed = 0
+        intervalLastRecoverSec = 0
+        intervalRecoveredInTime = false
+        intervalHasResult = false
         announceInterval(work: true)
         intervalTimer?.invalidate()
         let t = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in self?.intervalTick() }
@@ -385,15 +394,30 @@ final class WorkoutViewModel: ObservableObject {
 
     private func intervalTick() {
         guard intervalActive else { return }
-        intervalRemaining -= 1
-        if intervalRemaining > 0 { return }
         if intervalIsWork {
-            intervalIsWork = false
-            intervalRemaining = intervalRestSec
-            announceInterval(work: false)
-        } else if intervalRound >= intervalRounds {
+            intervalRemaining -= 1
+            if intervalRemaining <= 0 {          // hard phase done → start recovery
+                intervalIsWork = false
+                intervalRecoverElapsed = 0
+                announceInterval(work: false)
+            }
+            return
+        }
+        // Recovery phase: count up until HR drops back to Zone 2.
+        intervalRecoverElapsed += 1
+        let hr = bpm ?? 0
+        let recovered = hr > 0 && hr <= zone2Ceiling
+        let tooLong = intervalRecoverElapsed >= intervalWorkSec * 4    // safety cap
+        guard recovered || tooLong else { return }
+
+        intervalLastRecoverSec = intervalRecoverElapsed
+        intervalRecoveredInTime = recovered && intervalRecoverElapsed <= intervalWorkSec
+        intervalHasResult = true
+        announceRecovery(recovered: recovered)
+
+        if intervalRound >= intervalRounds || tooLong {
             stopIntervals()
-            hrm.say("Workout complete. Great job.")
+            if intervalRound >= intervalRounds { hrm.say("Workout complete. Great job.") }
         } else {
             intervalRound += 1
             intervalIsWork = true
@@ -403,8 +427,19 @@ final class WorkoutViewModel: ObservableObject {
     }
 
     private func announceInterval(work: Bool) {
-        hrm.say(work ? "Go hard" : "Recover")
+        hrm.say(work ? "Go hard" : "Ease off. Recover to zone two.")
         UINotificationFeedbackGenerator().notificationOccurred(work ? .warning : .success)
+    }
+
+    private func announceRecovery(recovered: Bool) {
+        if recovered {
+            hrm.say("Recovered in \(intervalLastRecoverSec) seconds. " +
+                    (intervalRecoveredInTime ? "On target. You can add thirty seconds next time."
+                                             : "Took longer than the interval. Stay here."))
+        } else {
+            hrm.say("Didn't reach zone two. Stay at this interval.")
+        }
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
 
     // MARK: - Heart-rate recovery test (60s drop after hard effort)
