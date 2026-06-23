@@ -53,7 +53,7 @@ struct ContentView: View {
                 .tabItem { Label("Progress", systemImage: "chart.bar.fill") }
             WeightView(store: weightStore, workouts: store)
                 .tabItem { Label("Weight", systemImage: "scalemass.fill") }
-            SettingsView(vm: vm, hrm: vm.hrm, store: store, age: $age, isMale: $isMale, weightLbs: $weightLbs,
+            SettingsView(vm: vm, hrm: vm.hrm, store: store, weightStore: weightStore, age: $age, isMale: $isMale, weightLbs: $weightLbs,
                          restingHR: $restingHR, bandZone: $bandZone, customBand: $customBand,
                          floorBpmManual: $floorBpmManual, ceilingBpmManual: $ceilingBpmManual,
                          useHRR: $useHRR, voiceEnabled: $voiceEnabled, voiceId: $voiceId, liveBanner: $liveBanner,
@@ -388,8 +388,6 @@ struct VO2MaxView: View {
     @State private var mode = 1
     @AppStorage("vo2IntervalSec") private var vo2IntervalSec = 30
     @AppStorage("vo2Rounds") private var vo2Rounds = 5
-    @State private var rawURLs: [URL] = []
-    @State private var showRawShare = false
 
     var body: some View {
         ZStack {
@@ -416,7 +414,6 @@ struct VO2MaxView: View {
         }
         // Resting test finished → adopt it as your resting HR (adaptive Zone 2).
         .onChange(of: vm.restingResult) { v in if v > 0 { restingHR = v } }
-        .sheet(isPresented: $showRawShare) { ActivityView(items: rawURLs) }
     }
 
     private var ownzoneContent: some View {
@@ -528,16 +525,6 @@ struct VO2MaxView: View {
                 }
             }
 
-            if vm.ownzoneHasData {
-                Button {
-                    rawURLs = vm.ownzoneExportURLs()
-                    if !rawURLs.isEmpty { showRawShare = true }
-                } label: {
-                    Label("Export raw test data (CSV)", systemImage: "square.and.arrow.up")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-            }
         }
     }
 
@@ -876,6 +863,7 @@ struct SettingsView: View {
     @ObservedObject var vm: WorkoutViewModel
     @ObservedObject var hrm: HeartRateManager
     @ObservedObject var store: WorkoutStore
+    @ObservedObject var weightStore: WeightStore
     @Binding var age: Int
     @Binding var isMale: Bool
     @Binding var weightLbs: Double
@@ -892,7 +880,7 @@ struct SettingsView: View {
     @Binding var measuredMax: Int
 
     @State private var showNotifDenied = false
-    @State private var exportURL: URL?
+    @State private var exportURLs: [URL] = []
     @State private var showShare = false
     @State private var showCompat = false
     @State private var showZoneChart = true
@@ -1075,10 +1063,10 @@ struct SettingsView: View {
 
                 Section {
                     Button {
-                        exportURL = PDFExport.generate(vm: vm, store: store)
-                        if exportURL != nil { showShare = true }
+                        exportURLs = ZoneExport.generate(vm: vm, store: store, weightStore: weightStore)
+                        if !exportURLs.isEmpty { showShare = true }
                     } label: {
-                        Label("Export PDF report", systemImage: "square.and.arrow.up")
+                        Label("Export all data", systemImage: "square.and.arrow.up")
                     }
                     Toggle("Save workouts to Apple Health", isOn: $healthEnabled)
                         .onChange(of: healthEnabled) { on in
@@ -1089,7 +1077,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Data")
                 } footer: {
-                    Text("Export builds a clean PDF (profile, zone band, trends, workout log) and opens the share sheet. Apple Health saving requires a properly signed build (App Store/TestFlight); on a sideloaded build the toggle may not stick.")
+                    Text("Exports everything: a clean PDF report (profile, zones, VO₂, trends, workouts, weight & calories) with a final page of raw flat numbers, plus your threshold-test CSVs. Opens the share sheet to save or send. Apple Health saving requires a signed build (App Store/TestFlight).")
                 }
 
                 Section("About") {
@@ -1157,7 +1145,7 @@ struct SettingsView: View {
                 Text("Notifications are turned off for Zone Alert, so zone alerts can't show. Open Settings → Notifications → allow them, then try the test again.")
             }
             .sheet(isPresented: $showShare) {
-                if let url = exportURL { ActivityView(items: [url]) }
+                if !exportURLs.isEmpty { ActivityView(items: exportURLs) }
             }
             .sheet(isPresented: $showCompat) {
                 CompatView(hrm: hrm)
