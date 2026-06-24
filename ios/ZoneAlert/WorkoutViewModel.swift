@@ -91,12 +91,13 @@ final class WorkoutViewModel: ObservableObject {
     private var adaptiveBelowSince: Date?
 
     /// Guided ramp stages for the threshold test (escalating effort, ~1 min each).
+    /// A gradual climb to push HR up through the aerobic threshold — never an all-out sprint.
     static let ownzoneStages: [(label: String, seconds: Int)] = [
         ("Easy walk", 60),
         ("Brisk walk", 60),
         ("Light jog", 60),
         ("Steady jog", 60),
-        ("Build harder", 60),
+        ("Harder run", 60),
     ]
     var ownzoneElapsed: Int { ownzoneLength - ownzoneRemaining }
     var ownzoneStageIndex: Int {

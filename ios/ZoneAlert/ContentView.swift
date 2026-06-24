@@ -418,7 +418,7 @@ struct VO2MaxView: View {
             Text("Adaptive Threshold (HRV)")
                 .font(.title2.bold()).frame(maxWidth: .infinity, alignment: .leading)
 
-            Text("A guided 5-minute ramp. The app reads your heart-rate variability and detects your aerobic threshold via DFA-α1 (the validated method) — α1 dropping through 0.75 marks the top of Zone 2 for today. Follow the stage prompts.")
+            Text("A guided 5-minute ramp that gradually raises your effort — walk → brisk walk → jog → harder run — to walk your heart rate up through your aerobic threshold. The app reads your heart-rate variability and detects the threshold via DFA-α1 (the validated method): α1 dropping through 0.75 marks the top of Zone 2 for today. Keep the last stage a controlled, comfortably-hard run — NOT a sprint (sprinting overshoots the threshold and adds motion noise). You don't need to max out; just climb until it detects the crossing.")
                 .font(.footnote).foregroundColor(.secondary)
 
             HStack(spacing: 10) {
