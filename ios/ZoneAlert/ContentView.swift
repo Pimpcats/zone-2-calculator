@@ -953,10 +953,14 @@ struct SettingsView: View {
         if customBand {
             return "Alerts if you drop below \(vm.floorBpm) or rise above \(vm.ceilingBpm) bpm."
         }
+        let pctLo = Zones.lowerBpm(zone: bandZone, mhr: vm.mhr)
+        let pctHi = Zones.upperBpm(zone: bandZone, mhr: vm.mhr)
+        let karLo = Zones.lowerBpmHRR(zone: bandZone, mhr: vm.mhr, rest: vm.restingHR)
+        let karHi = Zones.upperBpmHRR(zone: bandZone, mhr: vm.mhr, rest: vm.restingHR)
         if useHRR {
-            return "Heart-Rate Reserve (adaptive): Zone \(bandZone) = \(vm.floorBpm)–\(vm.ceilingBpm) bpm, from Max HR \(vm.mhr) and resting HR \(vm.restingHR). It nudges automatically as your resting HR changes — run the Resting test to update it."
+            return "Karvonen (Heart-Rate Reserve): Zone \(bandZone) = \(karLo)–\(karHi) bpm, from Max HR \(vm.mhr) and resting HR \(vm.restingHR). (Plain % of Max would be \(pctLo)–\(pctHi).) It accounts for your fitness and shifts as your resting HR changes — run the Resting test to refresh it."
         }
-        return "Stay in Zone \(bandZone): with Max HR \(vm.mhr) that's \(vm.floorBpm)–\(vm.ceilingBpm) bpm. You'll be alerted whenever you leave that range."
+        return "% of Max HR: Zone \(bandZone) = \(pctLo)–\(pctHi) bpm. Switch to Karvonen and it becomes \(karLo)–\(karHi) bpm (factors in your resting HR — usually a better fit)."
     }
 
     var body: some View {
@@ -1006,7 +1010,7 @@ struct SettingsView: View {
                         }
                         Picker("Zone math", selection: $useHRR) {
                             Text("% of Max HR").tag(false)
-                            Text("Heart-Rate Reserve").tag(true)
+                            Text("Karvonen (HR Reserve)").tag(true)
                         }
                     }
                 } header: {
