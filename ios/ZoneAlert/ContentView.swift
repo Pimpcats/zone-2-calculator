@@ -20,7 +20,6 @@ enum AppInfo {
 struct ContentView: View {
     @StateObject private var vm = WorkoutViewModel()
     @StateObject private var store = WorkoutStore()
-    @StateObject private var weightStore = WeightStore()
 
     @AppStorage("age") private var age: Int = 40
     @AppStorage("isMale") private var isMale: Bool = true
@@ -51,9 +50,7 @@ struct ContentView: View {
                 .tabItem { Label("VO2 Max", systemImage: "lungs.fill") }
             ProgressTabView(store: store)
                 .tabItem { Label("Progress", systemImage: "chart.bar.fill") }
-            WeightView(store: weightStore, workouts: store)
-                .tabItem { Label("Weight", systemImage: "scalemass.fill") }
-            SettingsView(vm: vm, hrm: vm.hrm, store: store, weightStore: weightStore, age: $age, isMale: $isMale, weightLbs: $weightLbs,
+            SettingsView(vm: vm, hrm: vm.hrm, store: store, age: $age, isMale: $isMale, weightLbs: $weightLbs,
                          restingHR: $restingHR, bandZone: $bandZone, customBand: $customBand,
                          floorBpmManual: $floorBpmManual, ceilingBpmManual: $ceilingBpmManual,
                          useHRR: $useHRR, voiceEnabled: $voiceEnabled, voiceId: $voiceId, liveBanner: $liveBanner,
@@ -863,7 +860,6 @@ struct SettingsView: View {
     @ObservedObject var vm: WorkoutViewModel
     @ObservedObject var hrm: HeartRateManager
     @ObservedObject var store: WorkoutStore
-    @ObservedObject var weightStore: WeightStore
     @Binding var age: Int
     @Binding var isMale: Bool
     @Binding var weightLbs: Double
@@ -880,8 +876,7 @@ struct SettingsView: View {
     @Binding var measuredMax: Int
 
     @State private var showNotifDenied = false
-    @State private var exportURLs: [URL] = []
-    @State private var showShare = false
+    @State private var exportItems: ExportItems?
     @State private var showCompat = false
     @State private var showZoneChart = true
     @AppStorage("healthEnabled") private var healthEnabled = false
@@ -1063,8 +1058,8 @@ struct SettingsView: View {
 
                 Section {
                     Button {
-                        exportURLs = ZoneExport.generate(vm: vm, store: store, weightStore: weightStore)
-                        if !exportURLs.isEmpty { showShare = true }
+                        let urls = ZoneExport.generate(vm: vm, store: store)
+                        if !urls.isEmpty { exportItems = ExportItems(urls: urls) }
                     } label: {
                         Label("Export all data", systemImage: "square.and.arrow.up")
                     }
@@ -1144,9 +1139,7 @@ struct SettingsView: View {
             } message: {
                 Text("Notifications are turned off for Zone Alert, so zone alerts can't show. Open Settings → Notifications → allow them, then try the test again.")
             }
-            .sheet(isPresented: $showShare) {
-                if !exportURLs.isEmpty { ActivityView(items: exportURLs) }
-            }
+            .sheet(item: $exportItems) { ActivityView(items: $0.urls) }
             .sheet(isPresented: $showCompat) {
                 CompatView(hrm: hrm)
             }

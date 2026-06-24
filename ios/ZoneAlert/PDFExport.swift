@@ -11,6 +11,13 @@ struct ActivityView: UIViewControllerRepresentable {
     func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
 }
 
+/// Identifiable wrapper so the share sheet is driven by `.sheet(item:)` — guarantees the
+/// files are ready when it presents (avoids the blank-first-open share sheet).
+struct ExportItems: Identifiable {
+    let id = UUID()
+    let urls: [URL]
+}
+
 // MARK: - Simple sparkline for the report (Canvas renders cleanly into PDF)
 
 struct ReportSparkline: View {
@@ -50,7 +57,6 @@ private func sectionTitle(_ t: String) -> some View {
 struct ReportView: View {
     let vm: WorkoutViewModel
     let store: WorkoutStore
-    let weightStore: WeightStore
 
     private var weightLbs: Int { Int((vm.weightKg / 0.453592).rounded()) }
     private func zoneBounds(_ z: Int) -> (Int, Int) {
@@ -101,8 +107,6 @@ struct ReportView: View {
             trendSection("Aerobic threshold trend", series: store.series("ownzone"), color: accent)
             trendSection("HR recovery trend", series: store.series("recovery"), color: .blue)
 
-            weightSummary
-
             sectionTitle("Recent workouts (\(store.records.count) total)")
             workoutTable(store.records.prefix(12))
 
@@ -113,19 +117,6 @@ struct ReportView: View {
         .frame(width: 612, alignment: .leading)
         .background(Color.white)
         .foregroundColor(ink)
-    }
-
-    @ViewBuilder private var weightSummary: some View {
-        if !weightStore.weights.isEmpty || !weightStore.days.isEmpty {
-            sectionTitle("Weight & calories")
-            let vals = weightStore.weights.map { Int($0.lb.rounded()) }
-            if vals.count > 1 { ReportSparkline(values: vals, color: .purple) }
-            grid([
-                ("Latest weight", weightStore.latestWeight.map { String(format: "%.1f lb", $0) } ?? "—"),
-                ("Weigh-ins logged", "\(weightStore.weights.count)"),
-                ("Days logged (calories)", "\(weightStore.days.filter { $0.eaten > 0 || $0.burned > 0 }.count)"),
-            ])
-        }
     }
 
     private func grid(_ items: [(String, String)]) -> some View {
@@ -196,7 +187,6 @@ struct ReportView: View {
 struct RawNumbersView: View {
     let vm: WorkoutViewModel
     let store: WorkoutStore
-    let weightStore: WeightStore
 
     private let mono = Font.system(size: 9, design: .monospaced)
 
@@ -214,14 +204,6 @@ struct RawNumbersView: View {
             sectionTitle("All measurements (\(store.measurements.count))")
             lines(["date,kind,bpm"] +
                   store.measurements.map { "\($0.date.formatted(date: .numeric, time: .shortened)),\($0.kind),\($0.bpm)" })
-
-            sectionTitle("Weight log (\(weightStore.weights.count))")
-            lines(["date,lb"] +
-                  weightStore.weights.map { "\($0.date.formatted(date: .numeric, time: .shortened)),\(String(format: "%.1f", $0.lb))" })
-
-            sectionTitle("Daily calories (\(weightStore.days.count))")
-            lines(["date,burned,eaten,deficit"] +
-                  weightStore.days.map { "\($0.dateKey),\($0.burned),\($0.eaten),\($0.burned - $0.eaten)" })
         }
         .padding(36)
         .frame(width: 612, alignment: .leading)
@@ -243,13 +225,13 @@ struct RawNumbersView: View {
 
 enum ZoneExport {
     @MainActor
-    static func generate(vm: WorkoutViewModel, store: WorkoutStore, weightStore: WeightStore) -> [URL] {
+    static func generate(vm: WorkoutViewModel, store: WorkoutStore) -> [URL] {
         var urls: [URL] = []
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let pdfURL = docs.appendingPathComponent("ZoneAlert-Report.pdf")
         let pages: [AnyView] = [
-            AnyView(ReportView(vm: vm, store: store, weightStore: weightStore)),
-            AnyView(RawNumbersView(vm: vm, store: store, weightStore: weightStore)),
+            AnyView(ReportView(vm: vm, store: store)),
+            AnyView(RawNumbersView(vm: vm, store: store)),
         ]
         if renderPDF(pages: pages, to: pdfURL) { urls.append(pdfURL) }
         if vm.ownzoneHasData { urls += vm.ownzoneExportURLs() }   // raw per-second threshold CSVs
