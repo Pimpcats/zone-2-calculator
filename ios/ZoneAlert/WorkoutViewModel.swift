@@ -67,7 +67,8 @@ final class WorkoutViewModel: ObservableObject {
     @Published var ownzoneRemaining = 0
     @Published var ownzoneRMSSD: Double = 0      // current HRV (ms)
     @Published var ownzoneBaseline: Double = 0   // highest HRV seen (easy effort)
-    @Published var ownzoneThresholdHR = 0        // detected aerobic threshold HR
+    @Published var ownzoneThresholdHR = 0        // detected aerobic threshold HR (0 = none)
+    @Published var ownzoneNotReached = false     // test finished without crossing 0.75
     private var ownzoneTimer: Timer?
     private var rrBuffer: [Double] = []
     private var ownzoneBelowSince: Date?
@@ -481,6 +482,7 @@ final class WorkoutViewModel: ObservableObject {
         ownzoneRMSSD = 0
         ownzoneBaseline = 0
         ownzoneThresholdHR = 0
+        ownzoneNotReached = false
         ownzoneAlpha1 = 0
         ownzoneAlphaBaseline = 0
         rrBuffer = []
@@ -571,8 +573,14 @@ final class WorkoutViewModel: ObservableObject {
                                label: Self.ownzoneStages[stage].label,
                                bpm: bpm ?? 0, rmssd: ownzoneRMSSD, alpha1: ownzoneAlpha1))
         if ownzoneRemaining <= 0 {
-            if ownzoneThresholdHR == 0, let b = bpm { ownzoneThresholdHR = b }
-            if ownzoneThresholdHR > 0 { store?.addMeasurement(kind: "ownzone", bpm: ownzoneThresholdHR) }
+            if ownzoneThresholdHR > 0 {
+                store?.addMeasurement(kind: "ownzone", bpm: ownzoneThresholdHR)
+            } else {
+                // α1 never broke through 0.75 — the effort didn't reach threshold.
+                ownzoneNotReached = true
+                hrm.say("Threshold not reached. Push harder in the final stage next time.")
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
+            }
             cancelOwnzoneTest()
         }
     }
@@ -606,6 +614,8 @@ final class WorkoutViewModel: ObservableObject {
                 if let since = ownzoneBelowSince {
                     if Date().timeIntervalSince(since) >= 6, let b = bpm, b > 0 {
                         ownzoneThresholdHR = b
+                        hrm.say("Threshold found at \(b).")
+                        UINotificationFeedbackGenerator().notificationOccurred(.success)
                     }
                 } else {
                     ownzoneBelowSince = Date()

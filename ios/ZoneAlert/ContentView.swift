@@ -520,6 +520,16 @@ struct VO2MaxView: View {
                     }
                     .buttonStyle(.borderedProminent).tint(.green)
                 }
+            } else if vm.ownzoneNotReached {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("Threshold not reached", systemImage: "exclamationmark.triangle.fill")
+                        .font(.headline).foregroundColor(.orange)
+                    Text("Your HRV (α1) stayed above 0.75 the whole test — your effort didn't reach your aerobic threshold. Next time, push the final “Harder run” stage genuinely hard so your heart rate climbs past it. You'll hear “Threshold found” when it catches.")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color.orange.opacity(0.12)))
             }
 
         }
