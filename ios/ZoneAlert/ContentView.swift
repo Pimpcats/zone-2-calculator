@@ -38,6 +38,7 @@ struct ContentView: View {
     @AppStorage("adaptiveHRV") private var adaptiveHRV: Bool = false
     @AppStorage("indoorMode") private var indoorMode: Bool = false
     @AppStorage("treadmillMph") private var treadmillMph: Double = 3.0
+    @AppStorage("workoutGoalMin") private var workoutGoalMin: Int = 30
 
     var body: some View {
         TabView {
@@ -80,6 +81,7 @@ struct ContentView: View {
         .onChange(of: adaptiveHRV) { _ in applySettings() }
         .onChange(of: indoorMode) { _ in applySettings() }
         .onChange(of: treadmillMph) { _ in applySettings() }
+        .onChange(of: workoutGoalMin) { _ in applySettings() }
         .onChange(of: liveBanner) { _ in applySettings() }
         .onChange(of: useMeasuredMax) { _ in applySettings() }
         .onChange(of: measuredMax) { _ in applySettings() }
@@ -95,6 +97,7 @@ struct ContentView: View {
                  indoorMode: indoorMode, treadmillMph: treadmillMph)
         vm.hrm.voiceEnabled = voiceEnabled
         vm.hrm.voiceIdentifier = voiceId
+        vm.workoutGoalSec = workoutGoalMin * 60
         vm.liveBannerEnabled = liveBanner
         vm.syncLiveActivity()
     }
@@ -117,6 +120,7 @@ struct WorkoutView: View {
     @AppStorage("adaptiveHRV") private var adaptiveHRV = false
     @AppStorage("indoorMode") private var indoorMode = false
     @AppStorage("treadmillMph") private var treadmillMph: Double = 3.0
+    @AppStorage("workoutGoalMin") private var workoutGoalMin = 30
 
     private var tooLow: Bool { vm.connected && vm.active && (vm.bpm ?? 999) < vm.floorBpm }
     private var tooHigh: Bool { vm.connected && vm.active && (vm.bpm ?? 0) > vm.ceilingBpm }
@@ -134,6 +138,7 @@ struct WorkoutView: View {
                 ScrollView {
                     VStack(spacing: 18) {
                         zoneIndicator
+                        goalCard
                         bandBar
                         adaptiveCard
                         indoorCard
@@ -205,6 +210,31 @@ struct WorkoutView: View {
             } else {
                 Text("Off — distance & pace use GPS (for outdoor walks/runs).")
                     .font(.caption2).foregroundColor(.secondary)
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
+    }
+
+    private var goalCard: some View {
+        let goalSec = workoutGoalMin * 60
+        let remaining = max(0, goalSec - Int(vm.duration))
+        let reached = vm.active && Int(vm.duration) >= goalSec
+        return VStack(spacing: 8) {
+            Stepper(value: $workoutGoalMin, in: 5...300, step: 5) {
+                Label("Workout goal: \(workoutGoalMin) min", systemImage: "target")
+                    .font(.subheadline.bold())
+            }
+            if reached {
+                Text("🎉 Goal reached — \(workoutGoalMin) min")
+                    .font(.title3.bold()).foregroundColor(.green)
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "hourglass").foregroundColor(.red)
+                    Text(WorkoutViewModel.clock(TimeInterval(remaining)))
+                        .font(.system(size: 34, weight: .bold, design: .rounded)).monospacedDigit()
+                    Text(vm.active ? "left" : "to go").font(.caption).foregroundColor(.secondary)
+                }
             }
         }
         .padding(12)

@@ -19,6 +19,11 @@ final class WorkoutViewModel: ObservableObject {
     @Published var active = false
     @Published var notifStatus: String = "Checking…"
 
+    // Workout goal countdown (target total time)
+    var workoutGoalSec = 0                 // 0 = no goal
+    @Published var goalReached = false
+    var goalRemaining: Int { max(0, workoutGoalSec - Int(duration)) }
+
     // 5-minute resting-HR test
     @Published var restingTesting = false
     @Published var restingRemaining = 0      // seconds left
@@ -292,6 +297,7 @@ final class WorkoutViewModel: ObservableObject {
     func start() {
         active = true
         hrm.alertsEnabled = true     // zone alerts only while actively working out
+        if duration == 0 { goalReached = false }   // fresh start resets the goal alert
         sessionSaved = false
         startDate = Date().addingTimeInterval(-accumulated)
         lastHRDate = Date()
@@ -314,6 +320,7 @@ final class WorkoutViewModel: ObservableObject {
     func reset() {
         active = false
         hrm.alertsEnabled = false    // stop zone alerts once the workout is ended/reset
+        goalReached = false
         accumulated = 0
         duration = 0
         calories = 0
@@ -798,6 +805,21 @@ final class WorkoutViewModel: ObservableObject {
             if d > 0 { indoorDistMiles += treadmillMph * d / 3600.0 }  // integrate speed × time
             lastIndoorDuration = duration
         }
+        if workoutGoalSec > 0, !goalReached, Int(duration) >= workoutGoalSec {
+            goalReached = true
+            hrm.say("Goal reached. \(workoutGoalSec / 60) minutes done.")
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            notifyGoalReached()
+        }
+    }
+
+    private func notifyGoalReached() {
+        let c = UNMutableNotificationContent()
+        c.title = "🎯 Workout goal reached"
+        c.body = "You hit your \(workoutGoalSec / 60)-minute target. Keep going or finish up."
+        c.sound = .default
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil))
     }
 
     // MARK: - Formatting helpers
