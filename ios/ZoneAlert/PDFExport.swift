@@ -195,10 +195,10 @@ struct RawNumbersView: View {
             Text("Raw Numbers").font(.system(size: 20, weight: .bold))
 
             sectionTitle("All workouts (\(store.records.count))")
-            lines(["date,duration_s,miles,kcal,avg_bpm,peak_bpm,z1_s,z2_s,z3_s,z4_s,z5_s"] +
+            lines(["date,type,duration_s,miles,kcal,avg_bpm,peak_bpm,z1_s,z2_s,z3_s,z4_s,z5_s"] +
                   store.records.map { r in
                     let tz = (1...5).map { String(format: "%.0f", $0 < r.timeInZone.count ? r.timeInZone[$0] : 0) }.joined(separator: ",")
-                    return "\(r.date.formatted(date: .numeric, time: .shortened)),\(Int(r.duration)),\(String(format: "%.2f", r.distanceMiles)),\(Int(r.calories)),\(r.avgBpm),\(r.peakBpm),\(tz)"
+                    return "\(r.date.formatted(date: .numeric, time: .shortened)),\(r.exerciseType ?? "—"),\(Int(r.duration)),\(String(format: "%.2f", r.distanceMiles)),\(Int(r.calories)),\(r.avgBpm),\(r.peakBpm),\(tz)"
                   })
 
             sectionTitle("All measurements (\(store.measurements.count))")

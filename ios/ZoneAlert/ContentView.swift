@@ -36,7 +36,8 @@ struct ContentView: View {
     @AppStorage("useMeasuredMax") private var useMeasuredMax: Bool = true
     @AppStorage("measuredMax") private var measuredMax: Int = 190
     @AppStorage("adaptiveHRV") private var adaptiveHRV: Bool = false
-    @AppStorage("indoorMode") private var indoorMode: Bool = false
+    @AppStorage("exerciseType") private var exerciseType: String = ExerciseType.treadmill.rawValue
+    @AppStorage("gpsEnabled") private var gpsEnabled: Bool = false
     @AppStorage("treadmillMph") private var treadmillMph: Double = 3.0
     @AppStorage("workoutGoalMin") private var workoutGoalMin: Int = 30
 
@@ -79,7 +80,8 @@ struct ContentView: View {
         .onChange(of: voiceEnabled) { _ in applySettings() }
         .onChange(of: voiceId) { _ in applySettings() }
         .onChange(of: adaptiveHRV) { _ in applySettings() }
-        .onChange(of: indoorMode) { _ in applySettings() }
+        .onChange(of: exerciseType) { _ in applySettings() }
+        .onChange(of: gpsEnabled) { _ in applySettings() }
         .onChange(of: treadmillMph) { _ in applySettings() }
         .onChange(of: workoutGoalMin) { _ in applySettings() }
         .onChange(of: liveBanner) { _ in applySettings() }
@@ -93,8 +95,10 @@ struct ContentView: View {
         let mCeil = customBand ? ceilingBpmManual : nil
         vm.apply(age: age, isMale: isMale, weightKg: weightLbs * 0.453592, restingHR: restingHR,
                  bandZone: bandZone, mhrOverride: override, manualFloor: mFloor, manualCeiling: mCeil,
-                 useHRR: useHRR, adaptiveHRV: adaptiveHRV,
-                 indoorMode: indoorMode, treadmillMph: treadmillMph)
+                 useHRR: useHRR, adaptiveHRV: adaptiveHRV)
+        vm.exerciseType = ExerciseType(rawValue: exerciseType) ?? .treadmill
+        vm.gpsEnabled = gpsEnabled
+        vm.treadmillMph = max(0.1, treadmillMph)
         vm.hrm.voiceEnabled = voiceEnabled
         vm.hrm.voiceIdentifier = voiceId
         vm.workoutGoalSec = workoutGoalMin * 60
@@ -118,7 +122,8 @@ struct WorkoutView: View {
     @AppStorage("reviewAsked") private var reviewAsked = false
     @AppStorage("healthEnabled") private var healthEnabled = false
     @AppStorage("adaptiveHRV") private var adaptiveHRV = false
-    @AppStorage("indoorMode") private var indoorMode = false
+    @AppStorage("exerciseType") private var exerciseType = ExerciseType.treadmill.rawValue
+    @AppStorage("gpsEnabled") private var gpsEnabled = false
     @AppStorage("treadmillMph") private var treadmillMph: Double = 3.0
     @AppStorage("workoutGoalMin") private var workoutGoalMin = 30
 
@@ -141,7 +146,7 @@ struct WorkoutView: View {
                         goalCard
                         bandBar
                         adaptiveCard
-                        indoorCard
+                        exerciseCard
                         metricsGrid
                         pager
                     }
@@ -189,26 +194,40 @@ struct WorkoutView: View {
         return "On — reading your HRV during this workout to find today's threshold. Until it locks in, your Max-HR zones apply. Ramp effort up gradually for a clean read."
     }
 
-    private var indoorCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Toggle(isOn: $indoorMode) {
-                Label("Indoor / treadmill", systemImage: "figure.walk.motion")
-                    .font(.subheadline.bold())
+    private var exerciseCard: some View {
+        let type = ExerciseType(rawValue: exerciseType) ?? .treadmill
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label("Exercise", systemImage: type.icon).font(.subheadline.bold())
+                Spacer()
+                Picker("", selection: $exerciseType) {
+                    ForEach(ExerciseType.allCases) { t in Text(t.rawValue).tag(t.rawValue) }
+                }
+                .pickerStyle(.menu).tint(.orange)
             }
-            .tint(.orange)
-            if indoorMode {
-                Stepper(value: $treadmillMph, in: 0.5...15, step: 0.1) {
+            switch type.distanceSource {
+            case .speed:
+                Stepper(value: $treadmillMph, in: 0.5...30, step: 0.1) {
                     HStack {
-                        Text("Treadmill speed")
+                        Text("Speed")
                         Spacer()
                         Text(String(format: "%.1f mph", treadmillMph))
                             .font(.callout.bold().monospacedDigit()).foregroundColor(.orange)
                     }
                 }
-                Text("Distance & pace come from this speed instead of GPS. Calories stay heart-rate based.")
+                Text("Distance & pace come from this speed. Calories stay heart-rate based.")
                     .font(.caption2).foregroundColor(.secondary)
-            } else {
-                Text("Off — distance & pace use GPS (for outdoor walks/runs).")
+            case .gps:
+                Toggle(isOn: $gpsEnabled) {
+                    Label("Track distance with GPS", systemImage: "location.fill").font(.subheadline)
+                }
+                .tint(.green)
+                Text(gpsEnabled
+                     ? "Outdoor — distance & pace come from GPS. Calories stay heart-rate based."
+                     : "GPS off — only heart rate, zones, time & calories are tracked. Turn on for distance & pace.")
+                    .font(.caption2).foregroundColor(.secondary)
+            case .none:
+                Text("Distance & pace aren't tracked for this type. Heart rate, zones, time & calories still are.")
                     .font(.caption2).foregroundColor(.secondary)
             }
         }

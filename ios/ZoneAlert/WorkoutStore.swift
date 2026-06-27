@@ -10,6 +10,7 @@ struct WorkoutRecord: Codable, Identifiable {
     var avgBpm: Int
     var peakBpm: Int
     var timeInZone: [Double]   // index 1...5
+    var exerciseType: String? = nil
 }
 
 /// A single physiology measurement (resting HR or OwnZone aerobic threshold) over time.
