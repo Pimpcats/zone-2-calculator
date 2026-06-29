@@ -91,6 +91,13 @@ final class HeartRateManager: NSObject, ObservableObject {
         )
     }
 
+    /// Auto-reconnect to the saved strap (on launch / when returning to the app), as long
+    /// as one is already paired. Does nothing if no strap is paired yet, or already connected.
+    func autoConnectIfPinned() {
+        guard pinnedID != nil, !connected, central.state == .poweredOn else { return }
+        startScanning()
+    }
+
     /// Forget the paired strap so the next connect pairs a fresh one.
     func forgetDevice() {
         pinnedID = nil
@@ -340,7 +347,13 @@ extension HeartRateManager: CBCentralManagerDelegate {
         DispatchQueue.main.async { self.bluetoothReady = (central.state == .poweredOn) }
         switch central.state {
         case .poweredOn:
-            if let p = peripheral { central.connect(p, options: nil) }
+            // Auto-reconnect to your already-paired strap the moment Bluetooth is ready —
+            // no manual Connect needed. Only your pinned strap; never a random device.
+            if pinnedID != nil {
+                startScanning()
+            } else if let p = peripheral {
+                central.connect(p, options: nil)
+            }
         case .poweredOff:
             DispatchQueue.main.async { self.statusText = "Bluetooth is off"; self.connected = false }
         case .unauthorized:

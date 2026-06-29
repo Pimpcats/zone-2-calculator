@@ -18,6 +18,7 @@ enum AppInfo {
 // MARK: - Root (tabs + settings source of truth)
 
 struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var vm = WorkoutViewModel()
     @StateObject private var store = WorkoutStore()
 
@@ -61,7 +62,8 @@ struct ContentView: View {
         }
         .tint(.red)
         .preferredColorScheme(.dark)
-        .onAppear { vm.store = store; applySettings(); requestNotifications(); vm.loc.requestAuthorization() }
+        .onAppear { vm.store = store; applySettings(); requestNotifications(); vm.loc.requestAuthorization(); vm.hrm.autoConnectIfPinned() }
+        .onChange(of: scenePhase) { phase in if phase == .active { vm.hrm.autoConnectIfPinned() } }
         .onChange(of: age) { _ in applySettings() }
         .onChange(of: isMale) { _ in applySettings() }
         .onChange(of: weightLbs) { _ in applySettings() }
