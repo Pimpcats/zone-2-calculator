@@ -465,10 +465,10 @@ extension HeartRateManager: CBPeripheralDelegate {
 
         var idx = 1
         let value: Int
-        if flags & 0x01 == 0 {
-            value = Int(bytes[idx]); idx += 1
+        if flags & 0x01 != 0, idx + 1 < bytes.count {
+            value = Int(bytes[idx]) | (Int(bytes[idx + 1]) << 8); idx += 2   // 16-bit HR
         } else {
-            value = Int(bytes[idx]) | (Int(bytes[idx + 1]) << 8); idx += 2
+            value = Int(bytes[idx]); idx += 1                                 // 8-bit HR
         }
         if flags & 0x08 != 0 { idx += 2 }   // skip energy-expended field if present
         // R-R intervals (uint16 LE, units of 1/1024 s) when bit 4 is set
