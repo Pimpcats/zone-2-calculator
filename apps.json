@@ -1,0 +1,52 @@
+{
+  "name": "Zone Alert Updates",
+  "identifier": "com.pimpcats.zonealert.source",
+  "apps": [
+    {
+      "name": "Zone Alert",
+      "bundleIdentifier": "com.pimpcats.zonealert",
+      "developerName": "Pimpcats",
+      "subtitle": "Heart-rate zone alerts for your Polar strap",
+      "localizedDescription": "Pairs with your Polar H9 over Bluetooth and alerts you (buzz + banner) when your heart rate drops below your Zone 2 floor or rises above your Zone 3 ceiling — even with the screen locked. Includes a live workout dashboard, daily/weekly progress, and a VO2 Max test.",
+      "iconURL": "https://raw.githubusercontent.com/Pimpcats/zone-2-calculator/main/ios/ZoneAlert/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
+      "tintColor": "FF4146",
+      "category": "healthcare",
+      "screenshotURLs": [],
+      "version": "1.0.59",
+      "versionDate": "2026-07-02T09:16:00Z",
+      "downloadURL": "https://github.com/Pimpcats/zone-2-calculator/releases/download/latest/ZoneAlert.ipa",
+      "size": 592616,
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {
+          "NSBluetoothAlwaysUsageDescription": "Connects to your heart-rate strap to track zones and alert you, even when the screen is locked.",
+          "NSLocationWhenInUseUsageDescription": "Measures your distance and pace during a workout.",
+          "NSLocationAlwaysAndWhenInUseUsageDescription": "Keeps recording distance and pace while the screen is locked.",
+          "NSHealthShareUsageDescription": "Reads your all-day steps, resting heart rate, and sleep from Apple Health.",
+          "NSHealthUpdateUsageDescription": "Can save your completed workouts to Apple Health."
+        }
+      },
+      "versions": [
+        {
+          "version": "1.0.59",
+          "date": "2026-07-02T09:16:00Z",
+          "localizedDescription": "Latest build.",
+          "downloadURL": "https://github.com/Pimpcats/zone-2-calculator/releases/download/latest/ZoneAlert.ipa",
+          "size": 592616,
+          "minOSVersion": "16.0",
+          "appPermissions": {
+            "entitlements": [],
+            "privacy": {
+              "NSBluetoothAlwaysUsageDescription": "Connects to your heart-rate strap to track zones and alert you, even when the screen is locked.",
+              "NSLocationWhenInUseUsageDescription": "Measures your distance and pace during a workout.",
+              "NSLocationAlwaysAndWhenInUseUsageDescription": "Keeps recording distance and pace while the screen is locked.",
+              "NSHealthShareUsageDescription": "Reads your all-day steps, resting heart rate, and sleep from Apple Health.",
+              "NSHealthUpdateUsageDescription": "Can save your completed workouts to Apple Health."
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "news": []
+}

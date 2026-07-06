@@ -147,3 +147,16 @@ jobs:
             ios/ZoneAlert.ipa
             ios/apps.json
           fail_on_unmatched_files: true
+
+      - name: Commit source feed to repo root (raw-hosted AltStore source)
+        run: |
+          cp ios/apps.json apps.json
+          if git diff --quiet apps.json; then
+            echo "apps.json unchanged; nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add apps.json
+          git commit -m "Update AltStore source feed to ${VERSION} [skip ci]"
+          git push origin HEAD:main
