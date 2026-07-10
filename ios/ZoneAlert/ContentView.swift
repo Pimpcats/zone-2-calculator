@@ -123,6 +123,7 @@ struct WorkoutView: View {
     @Environment(\.requestReview) private var requestReview
     @AppStorage("reviewAsked") private var reviewAsked = false
     @AppStorage("healthEnabled") private var healthEnabled = false
+    @AppStorage("healthShortcutEnabled") private var healthShortcutEnabled = false
     @AppStorage("adaptiveHRV") private var adaptiveHRV = false
     @AppStorage("exerciseType") private var exerciseType = ExerciseType.treadmill.rawValue
     @AppStorage("gpsEnabled") private var gpsEnabled = false
@@ -281,6 +282,7 @@ struct WorkoutView: View {
                     let record = vm.makeRecord()
                     store.add(record)
                     if healthEnabled { vm.health.save(record) }
+                    if healthShortcutEnabled { HealthShortcut.send(record) }
                     vm.reset()
                     withAnimation { savedFlash = true }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
@@ -941,6 +943,7 @@ struct SettingsView: View {
     @State private var showCompat = false
     @State private var showZoneChart = true
     @AppStorage("healthEnabled") private var healthEnabled = false
+    @AppStorage("healthShortcutEnabled") private var healthShortcutEnabled = false
 
     /// One zone's row in the collapsible chart — live bpm range from the current Max HR.
     private func zoneRow(_ z: Zone) -> some View {
@@ -1134,10 +1137,26 @@ struct SettingsView: View {
                                 vm.health.requestAuth { granted in if !granted { healthEnabled = false } }
                             }
                         }
+                    Toggle("Send to Apple Health on Finish (via Shortcut)", isOn: $healthShortcutEnabled)
+                    if healthShortcutEnabled {
+                        DisclosureGroup("One-time Shortcut setup") {
+                            Text("""
+                            1. Open the Shortcuts app → ＋ new shortcut.
+                            2. Rename it exactly: Log Zone Alert Workout
+                            3. Add action “Get Dictionary from Input” (set input to Shortcut Input).
+                            4. Add “Get Value for Key” three times: kcal, miles, minutes (each from the Dictionary).
+                            5. Add “Adjust Date”: Subtract [minutes value] Minutes from Current Date.
+                            6. Add “Log Workout” (Health): Type = your usual exercise, Calories = kcal value, Distance = miles value, Start Time = Adjusted Date, End Time = Current Date.
+                            7. Allow Health access when asked. Done — Finish now logs to Health automatically.
+                            """)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        }
+                    }
                 } header: {
                     Text("Data")
                 } footer: {
-                    Text("Exports everything: a clean PDF report (profile, zones, VO₂, trends, workouts, weight & calories) with a final page of raw flat numbers, plus your threshold-test CSVs. Opens the share sheet to save or send. Apple Health saving requires a signed build (App Store/TestFlight).")
+                    Text("Exports everything: a clean PDF report (profile, zones, VO₂, trends, workouts, weight & calories) with a final page of raw flat numbers, plus your threshold-test CSVs. Opens the share sheet to save or send. “Save workouts to Apple Health” needs a signed build (App Store/TestFlight); the Shortcut route works on this sideloaded build — hitting Finish briefly opens Shortcuts, logs the workout to Health, and returns.")
                 }
 
                 Section("About") {
