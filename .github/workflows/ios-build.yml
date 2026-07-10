@@ -130,13 +130,6 @@ jobs:
           PY
           cat apps.json
 
-      - name: Upload .ipa artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ZoneAlert-unsigned-ipa
-          path: ios/ZoneAlert.ipa
-          if-no-files-found: error
-
       - name: Publish to rolling 'latest' release
         uses: softprops/action-gh-release@v2
         with:
