@@ -7,15 +7,15 @@
       "bundleIdentifier": "com.pimpcats.zonealert",
       "developerName": "Pimpcats",
       "subtitle": "Heart-rate zone alerts for your Polar strap",
-      "localizedDescription": "Pairs with your Polar H9 over Bluetooth and alerts you (buzz + banner) when your heart rate drops below your Zone 2 floor or rises above your Zone 3 ceiling — even with the screen locked. Includes a live workout dashboard, daily/weekly progress, and a VO2 Max test.",
+      "localizedDescription": "Pairs with your Polar H9 over Bluetooth and alerts you (buzz + banner) when your heart rate drops below your Zone 2 floor or rises above your Zone 3 ceiling \u2014 even with the screen locked. Includes a live workout dashboard, daily/weekly progress, and a VO2 Max test.",
       "iconURL": "https://raw.githubusercontent.com/Pimpcats/zone-2-calculator/main/ios/ZoneAlert/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
       "tintColor": "FF4146",
       "category": "healthcare",
       "screenshotURLs": [],
-      "version": "1.0.59",
-      "versionDate": "2026-07-02T09:16:00Z",
+      "version": "1.0.62",
+      "versionDate": "2026-07-10T16:26:42Z",
       "downloadURL": "https://github.com/Pimpcats/zone-2-calculator/releases/download/latest/ZoneAlert.ipa",
-      "size": 592616,
+      "size": 596159,
       "appPermissions": {
         "entitlements": [],
         "privacy": {
@@ -28,11 +28,11 @@
       },
       "versions": [
         {
-          "version": "1.0.59",
-          "date": "2026-07-02T09:16:00Z",
+          "version": "1.0.62",
+          "date": "2026-07-10T16:26:42Z",
           "localizedDescription": "Latest build.",
           "downloadURL": "https://github.com/Pimpcats/zone-2-calculator/releases/download/latest/ZoneAlert.ipa",
-          "size": 592616,
+          "size": 596159,
           "minOSVersion": "16.0",
           "appPermissions": {
             "entitlements": [],
