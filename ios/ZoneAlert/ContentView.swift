@@ -33,7 +33,7 @@ struct ContentView: View {
     @AppStorage("useHRR") private var useHRR: Bool = false
     @AppStorage("voiceEnabled") private var voiceEnabled: Bool = false
     @AppStorage("voiceId") private var voiceId: String = ""
-    @AppStorage("liveBanner") private var liveBanner: Bool = false
+    @AppStorage("liveBanner") private var liveBanner: Bool = true
     @AppStorage("useMeasuredMax") private var useMeasuredMax: Bool = true
     @AppStorage("measuredMax") private var measuredMax: Int = 190
     @AppStorage("adaptiveHRV") private var adaptiveHRV: Bool = false

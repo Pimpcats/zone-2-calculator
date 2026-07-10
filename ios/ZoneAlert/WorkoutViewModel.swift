@@ -179,7 +179,7 @@ final class WorkoutViewModel: ObservableObject {
     let loc = LocationTracker()
     let health = HealthStore()
     let liveActivity = LiveActivityManager()
-    var liveBannerEnabled = false   // keep the Live Activity up whenever connected
+    var liveBannerEnabled = true   // show the Live Activity during workouts (Settings toggle)
 
     private func liveStatus(_ v: Int) -> String {
         if v < floorBpm { return "low" }
