@@ -33,6 +33,7 @@ final class HeartRateManager: NSObject, ObservableObject {
     var floorBpm: Int = 0          // never drop below this
     var ceilingBpm: Int = 1000     // never go above this
     var alertsEnabled = false   // only true while a workout is actively running
+    var alertsUserEnabled = true   // Settings toggle: zone alert notifications (buzz + banner)
     var voiceEnabled = false
     var voiceIdentifier = ""        // chosen AVSpeechSynthesisVoice identifier ("" = system default)
     private let speaker = AVSpeechSynthesizer()
@@ -293,7 +294,7 @@ final class HeartRateManager: NSObject, ObservableObject {
     // MARK: - Alert evaluation
 
     private func evaluate(_ value: Int) {
-        guard alertsEnabled else { return }
+        guard alertsEnabled && alertsUserEnabled else { return }
         let now = Date()
         if value < floorBpm {
             if now.timeIntervalSince(lastLowNotify) > 25 {

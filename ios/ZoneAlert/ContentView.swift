@@ -34,6 +34,7 @@ struct ContentView: View {
     @AppStorage("voiceEnabled") private var voiceEnabled: Bool = false
     @AppStorage("voiceId") private var voiceId: String = ""
     @AppStorage("liveBanner") private var liveBanner: Bool = true
+    @AppStorage("zoneAlerts") private var zoneAlerts: Bool = true
     @AppStorage("useMeasuredMax") private var useMeasuredMax: Bool = true
     @AppStorage("measuredMax") private var measuredMax: Int = 190
     @AppStorage("adaptiveHRV") private var adaptiveHRV: Bool = false
@@ -57,6 +58,7 @@ struct ContentView: View {
                          restingHR: $restingHR, bandZone: $bandZone, customBand: $customBand,
                          floorBpmManual: $floorBpmManual, ceilingBpmManual: $ceilingBpmManual,
                          useHRR: $useHRR, voiceEnabled: $voiceEnabled, voiceId: $voiceId, liveBanner: $liveBanner,
+                         zoneAlerts: $zoneAlerts,
                          useMeasuredMax: $useMeasuredMax, measuredMax: $measuredMax)
                 .tabItem { Label("Settings", systemImage: "gearshape.fill") }
         }
@@ -87,6 +89,7 @@ struct ContentView: View {
         .onChange(of: treadmillMph) { _ in applySettings() }
         .onChange(of: workoutGoalMin) { _ in applySettings() }
         .onChange(of: liveBanner) { _ in applySettings() }
+        .onChange(of: zoneAlerts) { _ in applySettings() }
         .onChange(of: useMeasuredMax) { _ in applySettings() }
         .onChange(of: measuredMax) { _ in applySettings() }
     }
@@ -105,6 +108,7 @@ struct ContentView: View {
         vm.hrm.voiceIdentifier = voiceId
         vm.workoutGoalSec = workoutGoalMin * 60
         vm.liveBannerEnabled = liveBanner
+        vm.hrm.alertsUserEnabled = zoneAlerts
         vm.syncLiveActivity()
     }
 
@@ -935,6 +939,7 @@ struct SettingsView: View {
     @Binding var voiceEnabled: Bool
     @Binding var voiceId: String
     @Binding var liveBanner: Bool
+    @Binding var zoneAlerts: Bool
     @Binding var useMeasuredMax: Bool
     @Binding var measuredMax: Int
 
@@ -1186,9 +1191,10 @@ struct SettingsView: View {
                         Text(vm.notifStatus)
                             .foregroundColor(vm.notifStatus == "On" ? .green : .orange)
                     }
+                    Toggle("Zone alerts (buzz + banner)", isOn: $zoneAlerts)
                     Toggle("Speak alerts (voice cues)", isOn: $voiceEnabled)
                     if voiceEnabled { voicePicker }
-                    Toggle("Live heart-rate banner while working out (Lock Screen / Dynamic Island)", isOn: $liveBanner)
+                    Toggle("Dynamic Island / Lock Screen heart rate", isOn: $liveBanner)
                     Button {
                         vm.runTestAlert(onDenied: { showNotifDenied = true })
                     } label: {
@@ -1202,7 +1208,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Your target band")
                 } footer: {
-                    Text("Tip: tap the background test, then immediately lock your phone — a banner should appear in ~6 seconds. While a strap is connected (or Demo mode is on), Zone Alert keeps running in the background so zone alerts reach you with the screen locked.")
+                    Text("Zone alerts and the Dynamic Island display are independent — turn either on or off without affecting the other. Tip: tap the background test, then immediately lock your phone — a banner should appear in ~6 seconds. While a strap is connected (or Demo mode is on), Zone Alert keeps running in the background so zone alerts reach you with the screen locked.")
                 }
             }
             .scrollDismissesKeyboard(.interactively)
