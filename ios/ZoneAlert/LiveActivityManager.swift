@@ -61,6 +61,15 @@ final class LiveActivityManager {
             completion("iOS says Live Activities are disabled for Zone Alert. Turn them on in iPhone Settings → Zone Alert → Live Activities.")
             return
         }
+
+        // Identity readout: a re-signer that renames the app but not the widget breaks
+        // the parent/child bundle-ID rule, and iOS then silently never loads the widget.
+        let mainID = Bundle.main.bundleIdentifier ?? "?"
+        let appexURL = Bundle.main.builtInPlugInsURL!.appendingPathComponent("ZoneAlertWidget.appex")
+        let appexID = Bundle(url: appexURL)?.bundleIdentifier ?? "unreadable"
+        let idsMatch = appexID.hasPrefix(mainID + ".")
+        let identity = "App ID: \(mainID)\nWidget ID: \(appexID)\nPrefix match: \(idsMatch ? "✓" : "❌ MISMATCH — this is why the Island is blank; the re-signer renamed the app but not the widget")"
+
         let state = ZoneActivityAttributes.ContentState(bpm: 142, zone: 2, floor: 125,
                                                         ceiling: 140, status: "ok")
         do {
@@ -68,13 +77,17 @@ final class LiveActivityManager {
                 attributes: ZoneActivityAttributes(title: "Test"),
                 content: ActivityContent(state: state, staleDate: nil),
                 pushType: nil)
-            completion("Test started. Swipe to the Home Screen or lock the phone — you should see 142 bpm in the Dynamic Island / on the Lock Screen. It disappears in ~15 seconds.")
             Task {
-                try? await Task.sleep(nanoseconds: 15_000_000_000)
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                let st = String(describing: test.activityState)
+                await MainActor.run {
+                    completion("Live Activity requested — iOS reports state “\(st)” after 2.5 s.\n\n\(identity)\n\nIf everything above is ✓ and 142 bpm still isn’t in the Island, screenshot this pop-up. Test ends in ~12 s.")
+                }
+                try? await Task.sleep(nanoseconds: 12_000_000_000)
                 await test.end(nil, dismissalPolicy: .immediate)
             }
         } catch {
-            completion("iOS refused to start the Live Activity: \(error.localizedDescription)")
+            completion("iOS refused to start the Live Activity: \(error.localizedDescription)\n\n\(identity)")
         }
     }
 
