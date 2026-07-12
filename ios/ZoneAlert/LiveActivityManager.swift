@@ -44,6 +44,30 @@ final class LiveActivityManager {
         self.activity = nil
     }
 
+    /// Fire a 15-second sample Live Activity so the user can verify the Dynamic Island /
+    /// Lock Screen display works — and surface iOS's exact error when it doesn't.
+    func runTest(completion: @escaping (String) -> Void) {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+            completion("iOS says Live Activities are disabled for Zone Alert. Turn them on in iPhone Settings → Zone Alert → Live Activities.")
+            return
+        }
+        let state = ZoneActivityAttributes.ContentState(bpm: 142, zone: 2, floor: 125,
+                                                        ceiling: 140, status: "ok")
+        do {
+            let test = try Activity.request(
+                attributes: ZoneActivityAttributes(title: "Test"),
+                content: ActivityContent(state: state, staleDate: nil),
+                pushType: nil)
+            completion("Test started. Swipe to the Home Screen or lock the phone — you should see 142 bpm in the Dynamic Island / on the Lock Screen. It disappears in ~15 seconds.")
+            Task {
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
+                await test.end(nil, dismissalPolicy: .immediate)
+            }
+        } catch {
+            completion("iOS refused to start the Live Activity: \(error.localizedDescription)")
+        }
+    }
+
     /// Dismiss any leftover activities (e.g. the app was killed mid-workout, leaving the
     /// Island/banner stuck). Safe to call on launch since a workout never survives a kill.
     func endOrphaned() {

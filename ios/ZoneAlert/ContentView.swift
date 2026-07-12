@@ -947,6 +947,8 @@ struct SettingsView: View {
     @State private var exportItems: ExportItems?
     @State private var showCompat = false
     @State private var showZoneChart = true
+    @State private var showIslandTest = false
+    @State private var islandTestMsg = ""
     @AppStorage("healthEnabled") private var healthEnabled = false
     @AppStorage("healthShortcutEnabled") private var healthShortcutEnabled = false
 
@@ -1204,6 +1206,19 @@ struct SettingsView: View {
                         vm.hrm.scheduleBackgroundTest()
                     } label: {
                         Label("Test background alert (lock screen in 6s)", systemImage: "lock.iphone")
+                    }
+                    Button {
+                        vm.liveActivity.runTest { msg in
+                            islandTestMsg = msg
+                            showIslandTest = true
+                        }
+                    } label: {
+                        Label("Test Dynamic Island (15s)", systemImage: "waveform")
+                    }
+                    .alert("Dynamic Island test", isPresented: $showIslandTest) {
+                        Button("OK", role: .cancel) {}
+                    } message: {
+                        Text(islandTestMsg)
                     }
                 } header: {
                     Text("Your target band")
