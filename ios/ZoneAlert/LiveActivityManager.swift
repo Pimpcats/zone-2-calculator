@@ -68,7 +68,28 @@ final class LiveActivityManager {
         let appexURL = Bundle.main.builtInPlugInsURL!.appendingPathComponent("ZoneAlertWidget.appex")
         let appexID = Bundle(url: appexURL)?.bundleIdentifier ?? "unreadable"
         let idsMatch = appexID.hasPrefix(mainID + ".")
-        let identity = "App ID: \(mainID)\nWidget ID: \(appexID)\nPrefix match: \(idsMatch ? "✓" : "❌ MISMATCH — this is why the Island is blank; the re-signer renamed the app but not the widget")"
+
+        // Read the widget's embedded signing profile: if its application-identifier
+        // doesn't cover the widget's bundle ID, iOS refuses to launch the extension
+        // and dismisses the Live Activity moments after it starts.
+        var profileID = "none — widget has NO embedded signing profile"
+        let provURL = appexURL.appendingPathComponent("embedded.mobileprovision")
+        if let d = try? Data(contentsOf: provURL), let s = String(data: d, encoding: .isoLatin1),
+           let keyRange = s.range(of: "<key>application-identifier</key>") {
+            let tail = s[keyRange.upperBound...]
+            if let a = tail.range(of: "<string>"), let b = tail.range(of: "</string>"), a.upperBound <= b.lowerBound {
+                profileID = String(tail[a.upperBound..<b.lowerBound])
+            }
+        }
+        // Profile IDs are TEAMID.bundle-id; compare the suffix against the widget's ID.
+        let profileCovers = profileID.hasSuffix(".\(appexID)") || profileID.hasSuffix(".*") || profileID == appexID
+        let identity = """
+        App ID: \(mainID)
+        Widget ID: \(appexID)
+        Prefix match: \(idsMatch ? "✓" : "❌ MISMATCH — re-signer renamed the app but not the widget")
+        Widget profile: \(profileID)
+        Profile covers widget: \(profileCovers ? "✓" : "❌ NO — iOS will refuse to launch the widget; this is why the Island is blank")
+        """
 
         let state = ZoneActivityAttributes.ContentState(bpm: 142, zone: 2, floor: 125,
                                                         ceiling: 140, status: "ok")
