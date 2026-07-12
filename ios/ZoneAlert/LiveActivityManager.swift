@@ -47,6 +47,16 @@ final class LiveActivityManager {
     /// Fire a 15-second sample Live Activity so the user can verify the Dynamic Island /
     /// Lock Screen display works — and surface iOS's exact error when it doesn't.
     func runTest(completion: @escaping (String) -> Void) {
+        // The Island/banner is rendered by the bundled widget extension. Sideloaders
+        // sometimes strip extensions when re-signing — detect that from inside the
+        // installed bundle so the test names the real problem instead of doing nothing.
+        let plugins = (Bundle.main.builtInPlugInsURL.flatMap {
+            try? FileManager.default.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)
+        }) ?? []
+        guard plugins.contains(where: { $0.lastPathComponent == "ZoneAlertWidget.appex" }) else {
+            completion("❌ The widget extension (the code that draws the Dynamic Island / Lock Screen display) is MISSING from this install — your sideloader removed it while signing. Delete Zone Alert and reinstall the .ipa, choosing “Keep App Extensions” when asked.")
+            return
+        }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             completion("iOS says Live Activities are disabled for Zone Alert. Turn them on in iPhone Settings → Zone Alert → Live Activities.")
             return
