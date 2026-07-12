@@ -21,6 +21,14 @@ struct Measurement: Codable, Identifiable {
     var bpm: Int
 }
 
+/// Machine-readable backup of everything the store holds — written alongside the PDF
+/// on export, read back by "Import all data" to survive reinstalls.
+struct BackupFile: Codable {
+    var version = 1
+    var records: [WorkoutRecord]
+    var measurements: [Measurement]
+}
+
 /// Aggregated totals over a span of workouts.
 struct ProgressTotals {
     var count: Int = 0
@@ -64,6 +72,25 @@ final class WorkoutStore: ObservableObject {
     func add(_ r: WorkoutRecord) {
         records.insert(r, at: 0)
         save()
+    }
+
+    /// Merge a backup into the store, skipping anything already present (by id).
+    /// Returns how many workouts / measurements were actually added.
+    func mergeImported(_ backup: BackupFile) -> (workouts: Int, measurements: Int) {
+        let haveR = Set(records.map { $0.id })
+        let newR = backup.records.filter { !haveR.contains($0.id) }
+        records.append(contentsOf: newR)
+        records.sort { $0.date > $1.date }
+        save()
+
+        let haveM = Set(measurements.map { $0.id })
+        let newM = backup.measurements.filter { !haveM.contains($0.id) }
+        measurements.append(contentsOf: newM)
+        measurements.sort { $0.date > $1.date }
+        if let data = try? JSONEncoder().encode(measurements) {
+            UserDefaults.standard.set(data, forKey: mKey)
+        }
+        return (newR.count, newM.count)
     }
 
     func delete(_ r: WorkoutRecord) {

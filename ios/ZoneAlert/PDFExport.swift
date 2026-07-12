@@ -234,6 +234,15 @@ enum ZoneExport {
             AnyView(RawNumbersView(vm: vm, store: store)),
         ]
         if renderPDF(pages: pages, to: pdfURL) { urls.append(pdfURL) }
+
+        // Machine-readable backup — the file "Import all data" restores from.
+        let backup = BackupFile(records: store.records, measurements: store.measurements)
+        let backupURL = docs.appendingPathComponent("ZoneAlert-Backup.json")
+        if let data = try? JSONEncoder().encode(backup) {
+            try? data.write(to: backupURL)
+            urls.append(backupURL)
+        }
+
         if vm.ownzoneHasData { urls += vm.ownzoneExportURLs() }   // raw per-second threshold CSVs
         return urls
     }

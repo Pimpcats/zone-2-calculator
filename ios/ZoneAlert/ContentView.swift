@@ -949,6 +949,9 @@ struct SettingsView: View {
     @State private var showZoneChart = true
     @State private var showIslandTest = false
     @State private var islandTestMsg = ""
+    @State private var showImporter = false
+    @State private var showImportResult = false
+    @State private var importMsg = ""
     @AppStorage("healthEnabled") private var healthEnabled = false
     @AppStorage("healthShortcutEnabled") private var healthShortcutEnabled = false
 
@@ -1138,6 +1141,33 @@ struct SettingsView: View {
                     } label: {
                         Label("Export all data", systemImage: "square.and.arrow.up")
                     }
+                    Button {
+                        showImporter = true
+                    } label: {
+                        Label("Import all data (restore backup)", systemImage: "square.and.arrow.down")
+                    }
+                    .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json]) { result in
+                        switch result {
+                        case .success(let url):
+                            let scoped = url.startAccessingSecurityScopedResource()
+                            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                            if let data = try? Data(contentsOf: url),
+                               let backup = try? JSONDecoder().decode(BackupFile.self, from: data) {
+                                let added = store.mergeImported(backup)
+                                importMsg = "Restored \(added.workouts) workouts and \(added.measurements) measurements. Entries already on this phone were skipped."
+                            } else {
+                                importMsg = "Couldn't read that file. Pick the ZoneAlert-Backup.json saved by a previous “Export all data”."
+                            }
+                            showImportResult = true
+                        case .failure:
+                            break
+                        }
+                    }
+                    .alert("Import all data", isPresented: $showImportResult) {
+                        Button("OK", role: .cancel) {}
+                    } message: {
+                        Text(importMsg)
+                    }
                     Toggle("Save workouts to Apple Health", isOn: $healthEnabled)
                         .onChange(of: healthEnabled) { on in
                             if on {
@@ -1163,7 +1193,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Data")
                 } footer: {
-                    Text("Exports everything: a clean PDF report (profile, zones, VO₂, trends, workouts, weight & calories) with a final page of raw flat numbers, plus your threshold-test CSVs. Opens the share sheet to save or send. “Save workouts to Apple Health” needs a signed build (App Store/TestFlight); the Shortcut route works on this sideloaded build — hitting Finish briefly opens Shortcuts, logs the workout to Health, and returns.")
+                    Text("Export includes the PDF report, threshold CSVs, and ZoneAlert-Backup.json — save that backup file before deleting the app, then use “Import all data” after a fresh install to bring your whole history back. “Save workouts to Apple Health” needs a signed build (App Store/TestFlight); the Shortcut route works on this sideloaded build — hitting Finish briefly opens Shortcuts, logs the workout to Health, and returns.")
                 }
 
                 Section("About") {
