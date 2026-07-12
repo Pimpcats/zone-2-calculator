@@ -12,10 +12,10 @@
       "tintColor": "FF4146",
       "category": "healthcare",
       "screenshotURLs": [],
-      "version": "1.0.66",
-      "versionDate": "2026-07-12T15:33:49Z",
+      "version": "1.0.67",
+      "versionDate": "2026-07-12T15:38:29Z",
       "downloadURL": "https://github.com/Pimpcats/zone-2-calculator/releases/download/latest/ZoneAlert.ipa",
-      "size": 602904,
+      "size": 604293,
       "appPermissions": {
         "entitlements": [],
         "privacy": {
@@ -28,11 +28,11 @@
       },
       "versions": [
         {
-          "version": "1.0.66",
-          "date": "2026-07-12T15:33:49Z",
+          "version": "1.0.67",
+          "date": "2026-07-12T15:38:29Z",
           "localizedDescription": "Latest build.",
           "downloadURL": "https://github.com/Pimpcats/zone-2-calculator/releases/download/latest/ZoneAlert.ipa",
-          "size": 602904,
+          "size": 604293,
           "minOSVersion": "16.0",
           "appPermissions": {
             "entitlements": [],
