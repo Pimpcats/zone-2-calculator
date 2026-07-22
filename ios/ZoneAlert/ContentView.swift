@@ -149,13 +149,13 @@ struct WorkoutView: View {
                 topBar
                 ScrollView {
                     VStack(spacing: 18) {
+                        metricsGrid
+                        pager
                         zoneIndicator
                         goalCard
                         bandBar
                         adaptiveCard
                         exerciseCard
-                        metricsGrid
-                        pager
                     }
                     .padding(.horizontal, 18)
                     .padding(.top, 6)
