@@ -1284,16 +1284,104 @@ struct SettingsView: View {
 
 // MARK: - Progress (daily / weekly)
 
+/// Manually log a workout you did without the strap (e.g. your Health app or the
+/// treadmill recorded it). Saves a normal WorkoutRecord into history.
+struct ManualWorkoutSheet: View {
+    @ObservedObject var store: WorkoutStore
+    @Environment(\.dismiss) private var dismiss
+
+    @AppStorage("age") private var age = 40
+    @AppStorage("useMeasuredMax") private var useMeasuredMax = true
+    @AppStorage("measuredMax") private var measuredMax = 190
+
+    @State private var date = Date()
+    @State private var minutes = 45
+    @State private var distance = ""
+    @State private var calories = ""
+    @State private var avgBpm = ""
+    @State private var peakBpm = ""
+    @State private var type = ExerciseType.treadmill.rawValue
+
+    private var mhr: Int { (useMeasuredMax && measuredMax > 0) ? measuredMax : max(1, 220 - age) }
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("When") {
+                    DatePicker("Date & time", selection: $date)
+                }
+                Section("Workout") {
+                    Picker("Exercise", selection: $type) {
+                        ForEach(ExerciseType.allCases) { t in Text(t.rawValue).tag(t.rawValue) }
+                    }
+                    Stepper("Duration: \(minutes) min", value: $minutes, in: 1...600)
+                    field("Distance (mi)", $distance)
+                    field("Calories (kcal)", $calories)
+                    field("Avg HR (bpm)", $avgBpm)
+                    field("Peak HR (bpm)", $peakBpm)
+                }
+                Section {
+                    Text("For a workout you did without recording live — copy the numbers from your Health app or the treadmill. Blank fields save as 0. If you enter an average HR, the whole workout counts toward that zone.")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+            }
+            .navigationTitle("Add workout")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Save") { save(); dismiss() } }
+            }
+        }
+    }
+
+    private func field(_ label: String, _ text: Binding<String>) -> some View {
+        HStack {
+            Text(label)
+            Spacer()
+            TextField("0", text: text)
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 90)
+        }
+    }
+
+    private func save() {
+        let dur = TimeInterval(minutes * 60)
+        let avg = Int(Double(avgBpm) ?? 0)
+        var tz = [Double](repeating: 0, count: 6)
+        if avg > 0 {
+            let z = min(max(Zones.zone(forBpm: avg, mhr: mhr), 0), 5)
+            tz[z] = dur
+        }
+        let rec = WorkoutRecord(date: date, duration: dur,
+                                distanceMiles: Double(distance) ?? 0,
+                                calories: Double(calories) ?? 0,
+                                avgBpm: avg,
+                                peakBpm: Int(Double(peakBpm) ?? 0) == 0 ? avg : Int(Double(peakBpm) ?? 0),
+                                timeInZone: tz,
+                                exerciseType: type)
+        store.add(rec)
+    }
+}
+
 struct ProgressTabView: View {
     @ObservedObject var store: WorkoutStore
+    @State private var showAdd = false
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             ScrollView {
                 VStack(spacing: 16) {
-                    Text("Progress").font(.title2.bold())
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack {
+                        Text("Progress").font(.title2.bold())
+                        Spacer()
+                        Button { showAdd = true } label: {
+                            Label("Add", systemImage: "plus.circle.fill")
+                                .font(.subheadline.bold())
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                     DayReviewView(store: store)
 
@@ -1340,6 +1428,7 @@ struct ProgressTabView: View {
                 .padding(18)
             }
         }
+        .sheet(isPresented: $showAdd) { ManualWorkoutSheet(store: store) }
     }
 
     private func totalsCard(title: String, t: ProgressTotals) -> some View {
