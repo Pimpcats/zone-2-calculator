@@ -93,6 +93,14 @@ final class WorkoutStore: ObservableObject {
         return (newR.count, newM.count)
     }
 
+    /// Replace a saved workout (matched by id) with an edited version.
+    func update(_ r: WorkoutRecord) {
+        guard let i = records.firstIndex(where: { $0.id == r.id }) else { return }
+        records[i] = r
+        records.sort { $0.date > $1.date }
+        save()
+    }
+
     func delete(_ r: WorkoutRecord) {
         records.removeAll { $0.id == r.id }
         save()

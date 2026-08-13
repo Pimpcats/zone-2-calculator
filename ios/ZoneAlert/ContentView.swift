@@ -1364,9 +1364,137 @@ struct ManualWorkoutSheet: View {
     }
 }
 
+/// Edit a saved workout — fix numbers, or "complete" a session you only half-recorded.
+/// Completing scales the workout's own per-minute rates up to the real duration; if the
+/// record is too empty to extrapolate, it borrows rates from your last solid workout.
+struct EditWorkoutSheet: View {
+    let record: WorkoutRecord
+    @ObservedObject var store: WorkoutStore
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var date: Date
+    @State private var minutes: Int
+    @State private var distance: String
+    @State private var calories: String
+    @State private var avgBpm: String
+    @State private var peakBpm: String
+    @State private var type: String
+    @State private var timeInZone: [Double]
+    @State private var actualMinutes: Int
+    @State private var fillNote = ""
+
+    init(record: WorkoutRecord, store: WorkoutStore) {
+        self.record = record
+        self.store = store
+        _date = State(initialValue: record.date)
+        _minutes = State(initialValue: max(1, Int((record.duration / 60).rounded())))
+        _distance = State(initialValue: String(format: "%.2f", record.distanceMiles))
+        _calories = State(initialValue: "\(Int(record.calories))")
+        _avgBpm = State(initialValue: "\(record.avgBpm)")
+        _peakBpm = State(initialValue: "\(record.peakBpm)")
+        _type = State(initialValue: record.exerciseType ?? ExerciseType.treadmill.rawValue)
+        _timeInZone = State(initialValue: record.timeInZone)
+        _actualMinutes = State(initialValue: max(1, Int((record.duration / 60).rounded())))
+    }
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("Workout") {
+                    DatePicker("Date & time", selection: $date)
+                    Picker("Exercise", selection: $type) {
+                        ForEach(ExerciseType.allCases) { t in Text(t.rawValue).tag(t.rawValue) }
+                    }
+                    Stepper("Duration: \(minutes) min", value: $minutes, in: 1...600)
+                    field("Distance (mi)", $distance)
+                    field("Calories (kcal)", $calories)
+                    field("Avg HR (bpm)", $avgBpm)
+                    field("Peak HR (bpm)", $peakBpm)
+                }
+                Section {
+                    Stepper("Real duration: \(actualMinutes) min", value: $actualMinutes, in: 1...600)
+                    Button {
+                        completePartial()
+                    } label: {
+                        Label("Complete partial workout", systemImage: "wand.and.stars")
+                    }
+                    if !fillNote.isEmpty {
+                        Text(fillNote).font(.caption).foregroundColor(.secondary)
+                    }
+                } header: {
+                    Text("Forgot to start it on time?")
+                } footer: {
+                    Text("Set how long the workout really was, then tap Complete. Distance, calories and time-in-zone are scaled up from what was recorded — or, if this session is nearly empty, filled in from your most recent full workout's rates. Review the numbers above, then Save.")
+                }
+            }
+            .navigationTitle("Edit workout")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Save") { save(); dismiss() } }
+            }
+        }
+    }
+
+    private func field(_ label: String, _ text: Binding<String>) -> some View {
+        HStack {
+            Text(label)
+            Spacer()
+            TextField("0", text: text)
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 90)
+        }
+    }
+
+    private func completePartial() {
+        let targetSec = Double(actualMinutes * 60)
+        let recordedSec = Double(minutes * 60)
+        let kcalNow = Double(calories) ?? 0
+
+        if recordedSec >= 300 && kcalNow > 0 {
+            // Enough real data — scale this workout's own per-minute rates.
+            let f = targetSec / recordedSec
+            distance = String(format: "%.2f", (Double(distance) ?? 0) * f)
+            calories = "\(Int(kcalNow * f))"
+            timeInZone = timeInZone.map { $0 * f }
+            minutes = actualMinutes
+            fillNote = "Scaled this session's own pace ×\(String(format: "%.2f", f)) to \(actualMinutes) min."
+        } else if let ref = store.records.first(where: { $0.id != record.id && $0.duration >= 600 }) {
+            // Too little data — borrow per-minute rates from the last solid workout.
+            let mi = ref.distanceMiles / ref.duration * targetSec
+            let kc = ref.calories / ref.duration * targetSec
+            distance = String(format: "%.2f", mi)
+            calories = "\(Int(kc))"
+            if (Int(avgBpm) ?? 0) == 0 { avgBpm = "\(ref.avgBpm)" }
+            if (Int(peakBpm) ?? 0) == 0 { peakBpm = "\(ref.peakBpm)" }
+            let refTotal = max(1, ref.timeInZone.reduce(0, +))
+            timeInZone = ref.timeInZone.map { $0 / refTotal * targetSec }
+            minutes = actualMinutes
+            fillNote = "Filled from your \(ref.date.formatted(date: .abbreviated, time: .omitted)) workout's per-minute rates."
+        } else {
+            fillNote = "Not enough data here or in history to fill from — enter the numbers by hand."
+        }
+    }
+
+    private func save() {
+        var r = record
+        r.date = date
+        r.duration = TimeInterval(minutes * 60)
+        r.distanceMiles = Double(distance) ?? 0
+        r.calories = Double(calories) ?? 0
+        r.avgBpm = Int(Double(avgBpm) ?? 0)
+        r.peakBpm = Int(Double(peakBpm) ?? 0)
+        r.timeInZone = timeInZone
+        r.exerciseType = type
+        store.update(r)
+    }
+}
+
 struct ProgressTabView: View {
     @ObservedObject var store: WorkoutStore
     @State private var showAdd = false
+    @State private var editRecord: WorkoutRecord?
 
     var body: some View {
         ZStack {
@@ -1417,10 +1545,11 @@ struct ProgressTabView: View {
                     } else {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Recent workouts").font(.headline)
-                            Text("Swipe a workout right to delete it.")
+                            Text("Tap a workout to edit it. Swipe right to delete.")
                                 .font(.caption2).foregroundColor(.secondary)
                             ForEach(store.records.prefix(20)) { r in
                                 RecentWorkoutRow(record: r) { store.delete(r) }
+                                    .onTapGesture { editRecord = r }
                             }
                         }
                     }
@@ -1429,6 +1558,7 @@ struct ProgressTabView: View {
             }
         }
         .sheet(isPresented: $showAdd) { ManualWorkoutSheet(store: store) }
+        .sheet(item: $editRecord) { r in EditWorkoutSheet(record: r, store: store) }
     }
 
     private func totalsCard(title: String, t: ProgressTotals) -> some View {
