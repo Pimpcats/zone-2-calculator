@@ -1117,7 +1117,7 @@ struct SettingsView: View {
                     }
                     .disabled(hrm.pinnedID == nil)
                     Button { showCompat = true } label: {
-                        Label("Scan for compatible sensors", systemImage: "dot.radiowaves.left.and.right")
+                        Label(hrm.pinnedID == nil ? "Pair your strap" : "Pair a different strap / scan sensors", systemImage: "dot.radiowaves.left.and.right")
                     }
                     if hrm.demoMode {
                         Button(role: .destructive) { hrm.stopDemo() } label: {
@@ -1131,7 +1131,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Heart rate strap")
                 } footer: {
-                    Text("Once paired, Zone Alert only ever connects to this exact strap and ignores every other heart-rate device nearby. Forget it to switch straps (pair the new one while only it is awake).")
+                    Text("To pair: wet the strap's contacts, put it on, tap Pair your strap, then Use this strap. After that Zone Alert reconnects to that exact strap automatically and ignores every other heart-rate device nearby. Don't pair the strap in iPhone Settings → Bluetooth.")
                 }
 
                 Section {

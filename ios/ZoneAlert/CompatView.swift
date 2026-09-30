@@ -22,7 +22,7 @@ struct CompatView: View {
                 } header: {
                     Text("Nearby heart-rate sensors")
                 } footer: {
-                    Text("Any device listed here exposes the standard Bluetooth Heart Rate service, so it works with Zone Alert. Tap “Check R-R” to confirm HRV support for the adaptive threshold features (chest straps usually pass).")
+                    Text("Any device listed here works with Zone Alert. Tap “Use this strap” to pair it — Zone Alert will then always reconnect to it automatically. “Check R-R” confirms HRV support for the adaptive threshold features; wear the strap with wet contacts while it checks.")
                 }
             }
             .navigationTitle("Compatibility")
@@ -41,23 +41,33 @@ struct CompatView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(d.name).font(.callout.bold())
                 Text("❤️ Heart rate ✓").font(.caption).foregroundColor(.green)
-                if let rr = d.rrSupported {
+                if d.testing {
+                    Text("Checking HRV… keep the strap on").font(.caption).foregroundColor(.secondary)
+                } else if let rr = d.rrSupported {
                     Text(rr ? "HRV / R-R ✓ — adaptive threshold supported"
-                            : "HRV / R-R ✗ — HR works, threshold features won't")
+                            : "No R-R seen yet — wet the contacts, wear it snugly, then Retry")
                         .font(.caption).foregroundColor(rr ? .green : .orange)
                 } else {
                     Text("Signal \(d.rssi) dBm").font(.caption2).foregroundColor(.secondary)
                 }
             }
             Spacer()
-            if d.testing {
-                ProgressView()
-            } else if d.rrSupported == nil {
-                Button("Check R-R") { hrm.testRR(id: d.id) }
-                    .buttonStyle(.bordered).font(.caption)
-            } else {
-                Image(systemName: d.rrSupported == true ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
-                    .foregroundColor(d.rrSupported == true ? .green : .orange)
+            VStack(alignment: .trailing, spacing: 6) {
+                if hrm.pinnedID == d.id.uuidString {
+                    Label("Paired", systemImage: "checkmark.circle.fill")
+                        .font(.caption.bold()).foregroundColor(.green)
+                } else {
+                    Button("Use this strap") { hrm.pair(id: d.id); dismiss() }
+                        .buttonStyle(.borderedProminent).font(.caption)
+                }
+                if d.testing {
+                    ProgressView()
+                } else if d.rrSupported == true {
+                    Image(systemName: "checkmark.seal.fill").foregroundColor(.green)
+                } else {
+                    Button(d.rrSupported == nil ? "Check R-R" : "Retry R-R") { hrm.testRR(id: d.id) }
+                        .buttonStyle(.bordered).font(.caption)
+                }
             }
         }
         .padding(.vertical, 2)

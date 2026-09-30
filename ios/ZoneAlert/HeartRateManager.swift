@@ -194,21 +194,47 @@ final class HeartRateManager: NSObject, ObservableObject {
     }
 
     func stopCompatScan() {
-        if scanMode == .compat { central.stopScan() }
+        guard scanMode == .compat else { return }
+        central.stopScan()
         scanMode = .normal
-        if let id = testingID, let p = compatPeripherals[id] { central.cancelPeripheralConnection(p) }
+        if let id = testingID, let p = compatPeripherals[id], p != peripheral {
+            central.cancelPeripheralConnection(p)
+        }
         testingID = nil
+        // The compat scan replaced any in-progress search; resume it for the paired strap.
+        if !connected && !demoMode && pinnedID != nil { startScanning() }
+    }
+
+    /// Pair the strap picked in the compatibility list and connect to it.
+    func pair(id: UUID) {
+        guard let p = compatPeripherals[id] else { return }
+        central.stopScan()
+        scanMode = .normal
+        testingID = nil
+        if let old = peripheral, old.identifier != id { central.cancelPeripheralConnection(old) }
+        pinnedID = nil
+        pinIfNeeded(p)
+        let rr = compatDevices.first(where: { $0.id == id })?.rrSupported ?? false
+        pinnedRRSupported = rr
+        UserDefaults.standard.set(rr, forKey: "pinnedRRSupported")
+        connectTo(p)
+        scheduleReScan()
     }
 
     /// Briefly connect to a discovered device to confirm it streams R-R (HRV) data.
+    /// Straps often need several seconds of skin contact before R-R appears, so wait 20s.
     func testRR(id: UUID) {
         guard let p = compatPeripherals[id] else { return }
         central.stopScan()
         testingID = id
         if let i = compatDevices.firstIndex(where: { $0.id == id }) { compatDevices[i].testing = true }
-        p.delegate = self
-        central.connect(p, options: nil)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+        if p == peripheral && connected {
+            if pinnedRRSupported { finishTest(id: id, rr: true); return }
+        } else {
+            p.delegate = self
+            central.connect(p, options: nil)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
             guard let self = self, self.testingID == id else { return }
             self.finishTest(id: id, rr: false)
         }
@@ -223,7 +249,7 @@ final class HeartRateManager: NSObject, ObservableObject {
             pinnedRRSupported = rr
             UserDefaults.standard.set(rr, forKey: "pinnedRRSupported")
         }
-        if let p = compatPeripherals[id] { central.cancelPeripheralConnection(p) }
+        if let p = compatPeripherals[id], p != peripheral { central.cancelPeripheralConnection(p) }
         if testingID == id { testingID = nil }
         if scanMode == .compat { central.scanForPeripherals(withServices: [hrService], options: nil) }
     }
@@ -394,7 +420,7 @@ extension HeartRateManager: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        if peripheral.identifier == testingID {       // compatibility R-R test connection
+        if peripheral.identifier == testingID && peripheral != self.peripheral {   // R-R test connection
             peripheral.discoverServices([hrService])
             return
         }
@@ -409,7 +435,7 @@ extension HeartRateManager: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        if peripheral.identifier == testingID { return }   // test connection closing
+        if peripheral.identifier == testingID && peripheral != self.peripheral { return }   // test connection closing
         guard peripheral == self.peripheral else { return } // ignore non-primary devices
         DispatchQueue.main.async {
             self.connected = false
@@ -421,7 +447,7 @@ extension HeartRateManager: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
-        if peripheral.identifier == testingID { finishTest(id: peripheral.identifier, rr: false); return }
+        if peripheral.identifier == testingID && peripheral != self.peripheral { finishTest(id: peripheral.identifier, rr: false); return }
         guard peripheral == self.peripheral else { return }
         DispatchQueue.main.async { self.statusText = "Connection failed — retrying…" }
         central.connect(peripheral, options: nil)
@@ -455,7 +481,7 @@ extension HeartRateManager: CBPeripheralDelegate {
         // Compatibility R-R test: report whether this device includes R-R data.
         if peripheral.identifier == testingID {
             if flags & 0x10 != 0 { finishTest(id: peripheral.identifier, rr: true) }
-            return
+            if peripheral != self.peripheral { return }   // testing the live strap: keep streaming
         }
 
         // Passive confirmation: our pinned strap is sending R-R during normal use.
