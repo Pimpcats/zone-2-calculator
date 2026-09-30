@@ -1,0 +1,113 @@
+name: TestFlight
+
+# Signs the app with the Apple Developer account and uploads it to TestFlight.
+# Needs four repository secrets (Settings > Secrets and variables > Actions):
+#   APPLE_TEAM_ID  - 10-character Team ID (developer.apple.com > Membership)
+#   ASC_KEY_ID     - App Store Connect API key ID
+#   ASC_ISSUER_ID  - App Store Connect API issuer ID
+#   ASC_KEY_P8     - full contents of the AuthKey_XXXX.p8 file
+# Without them every run is skipped, so the sideload build keeps working.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ios/**'
+      - '.github/workflows/testflight.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+
+jobs:
+  testflight:
+    runs-on: macos-15
+    env:
+      TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+    steps:
+      - name: Check signing secrets
+        id: guard
+        run: |
+          if [ -z "$TEAM_ID" ] || [ -z "$ASC_KEY_ID" ] || [ -z "$ASC_ISSUER_ID" ] || [ -z "$ASC_KEY_P8" ]; then
+            echo "::notice::TestFlight secrets are not set yet; skipping upload."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.guard.outputs.skip == 'false'
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        if: steps.guard.outputs.skip == 'false'
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        if: steps.guard.outputs.skip == 'false'
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Set version and API key
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          echo "VERSION=1.1.${{ github.run_number }}" >> "$GITHUB_ENV"
+          echo "BUILD=${{ github.run_number }}.${{ github.run_attempt }}" >> "$GITHUB_ENV"
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${ASC_KEY_ID}.p8"
+          printf '%s\n' "$ASC_KEY_P8" > "$KEY_PATH"
+          echo "KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+
+      - name: Archive (signed)
+        if: steps.guard.outputs.skip == 'false'
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project ZoneAlert.xcodeproj \
+            -scheme ZoneAlert \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/ZoneAlert.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD"
+
+      - name: Upload to TestFlight
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          set -o pipefail
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${TEAM_ID}</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict>
+          </plist>
+          EOF
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/ZoneAlert.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+          echo "::notice::Uploaded Zone Alert $VERSION (build $BUILD) to App Store Connect. It appears in TestFlight after Apple finishes processing (usually 10-30 minutes)."
+
+      - name: Remove API key
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/AuthKey_*.p8
