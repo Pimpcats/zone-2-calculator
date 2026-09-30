@@ -58,7 +58,21 @@ jobs:
           echo "VERSION=1.1.${{ github.run_number }}" >> "$GITHUB_ENV"
           echo "BUILD=${{ github.run_number }}.${{ github.run_attempt }}" >> "$GITHUB_ENV"
           KEY_PATH="$RUNNER_TEMP/AuthKey_${ASC_KEY_ID}.p8"
-          printf '%s\n' "$ASC_KEY_P8" > "$KEY_PATH"
+          # Rebuild a clean PEM from whatever was pasted: tolerates Windows line
+          # endings, a byte-order mark, stray spaces, missing BEGIN/END lines,
+          # or the whole key squashed onto one line.
+          BODY=$(printf '%s' "$ASC_KEY_P8" \
+            | sed -e 's/-----BEGIN PRIVATE KEY-----//' -e 's/-----END PRIVATE KEY-----//' \
+            | LC_ALL=C tr -cd 'A-Za-z0-9+/=')
+          if [ -z "$BODY" ]; then
+            echo "::error::ASC_KEY_P8 secret is empty after cleanup. Paste the contents of the AuthKey_XXXX.p8 file."
+            exit 1
+          fi
+          { echo "-----BEGIN PRIVATE KEY-----"; printf '%s' "$BODY" | fold -w 64; echo; echo "-----END PRIVATE KEY-----"; } > "$KEY_PATH"
+          if ! openssl pkey -in "$KEY_PATH" -noout 2>/dev/null; then
+            echo "::error::ASC_KEY_P8 is not a valid private key. Re-copy the full contents of the AuthKey_XXXX.p8 file (open it in Notepad, Ctrl+A, Ctrl+C) into the secret."
+            exit 1
+          fi
           echo "KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
 
       - name: Archive (signed)
