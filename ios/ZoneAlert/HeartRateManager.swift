@@ -79,6 +79,8 @@ final class HeartRateManager: NSObject, ObservableObject {
     private var lastHighNotify = Date.distantPast
     private let keepAlive = KeepAlive()
     private var rescanWork: DispatchWorkItem?
+    private var dataWatchdog: DispatchWorkItem?
+    private var lastPacket = Date.distantPast
 
     override init() {
         super.init()
@@ -431,7 +433,27 @@ extension HeartRateManager: CBCentralManagerDelegate {
             self.statusText = "Connected to \(peripheral.name ?? "strap")"
             self.onReconnect?()
         }
+        lastPacket = Date()
         peripheral.discoverServices([hrService])
+        startDataWatchdog(peripheral)
+    }
+
+    /// While connected, make sure heart-rate readings actually arrive. If they stop,
+    /// say why in the status line and re-subscribe — a strap can hold the connection
+    /// open without sending anything (no skin contact, weak battery, stale subscription).
+    private func startDataWatchdog(_ p: CBPeripheral) {
+        dataWatchdog?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self, self.connected, p == self.peripheral else { return }
+            if Date().timeIntervalSince(self.lastPacket) > 7 {
+                self.bpm = nil
+                self.statusText = "Connected, but no heart-rate data — wet the strap contacts and wear it snugly"
+                p.discoverServices([self.hrService])   // re-subscribe in case notifications dropped
+            }
+            self.startDataWatchdog(p)
+        }
+        dataWatchdog = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: work)
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
@@ -443,6 +465,7 @@ extension HeartRateManager: CBCentralManagerDelegate {
             self.statusText = "Strap disconnected — retrying…"
             self.onDisconnect?()
         }
+        dataWatchdog?.cancel()
         central.connect(peripheral, options: nil)
     }
 
@@ -465,6 +488,13 @@ extension HeartRateManager: CBPeripheralDelegate {
         }
     }
 
+    func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
+        guard characteristic.uuid == hrMeasurement, peripheral == self.peripheral, let error = error else { return }
+        DispatchQueue.main.async {
+            self.statusText = "Couldn't read heart rate (\(error.localizedDescription)) — try Forget / re-pair strap"
+        }
+    }
+
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         guard let chars = service.characteristics else { return }
         for c in chars where c.uuid == hrMeasurement {
@@ -483,6 +513,20 @@ extension HeartRateManager: CBPeripheralDelegate {
             if flags & 0x10 != 0 { finishTest(id: peripheral.identifier, rr: true) }
             if peripheral != self.peripheral { return }   // testing the live strap: keep streaming
         }
+
+        // Sensor-contact bits: 0x04 = contact reporting supported, 0x02 = skin contact detected.
+        let contactSupported = flags & 0x04 != 0
+        let inContact = flags & 0x02 != 0
+        lastPacket = Date()
+        let name = peripheral.name ?? "strap"
+        DispatchQueue.main.async {
+            if contactSupported && !inContact {
+                self.statusText = "No skin contact — wet the strap contacts and tighten it"
+            } else if self.statusText.hasPrefix("No skin contact") || self.statusText.hasPrefix("Connected, but no") {
+                self.statusText = "Connected to \(name)"
+            }
+        }
+        if contactSupported && !inContact { DispatchQueue.main.async { self.bpm = nil }; return }
 
         // Passive confirmation: our pinned strap is sending R-R during normal use.
         if flags & 0x10 != 0 && !pinnedRRSupported {
