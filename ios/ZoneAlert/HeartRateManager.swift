@@ -62,6 +62,7 @@ final class HeartRateManager: NSObject, ObservableObject {
 
     /// Called on every heart-rate reading (used by the workout view model).
     var onReading: ((Int) -> Void)?
+    var onNoReading: (() -> Void)?   // strap connected but not delivering a usable heart rate
     /// Called with any R-R intervals (in milliseconds) included in a reading — used
     /// for HRV / OwnZone-style aerobic-threshold detection.
     var onRR: (([Double]) -> Void)?
@@ -447,6 +448,7 @@ extension HeartRateManager: CBCentralManagerDelegate {
             guard let self = self, self.connected, p == self.peripheral else { return }
             if Date().timeIntervalSince(self.lastPacket) > 7 {
                 self.bpm = nil
+                self.onNoReading?()
                 self.statusText = "Connected, but no heart-rate data — wet the strap contacts and wear it snugly"
                 p.discoverServices([self.hrService])   // re-subscribe in case notifications dropped
             }
@@ -522,11 +524,15 @@ extension HeartRateManager: CBPeripheralDelegate {
         DispatchQueue.main.async {
             if contactSupported && !inContact {
                 self.statusText = "No skin contact — wet the strap contacts and tighten it"
-            } else if self.statusText.hasPrefix("No skin contact") || self.statusText.hasPrefix("Connected, but no") {
+            } else if self.statusText.hasPrefix("No skin contact") || self.statusText.hasPrefix("Connected, but no")
+                        || self.statusText.hasPrefix("Strap isn't detecting") {
                 self.statusText = "Connected to \(name)"
             }
         }
-        if contactSupported && !inContact { DispatchQueue.main.async { self.bpm = nil }; return }
+        if contactSupported && !inContact {
+            DispatchQueue.main.async { self.bpm = nil; self.onNoReading?() }
+            return
+        }
 
         // Passive confirmation: our pinned strap is sending R-R during normal use.
         if flags & 0x10 != 0 && !pinnedRRSupported {
@@ -543,8 +549,8 @@ extension HeartRateManager: CBPeripheralDelegate {
         }
         if flags & 0x08 != 0 { idx += 2 }   // skip energy-expended field if present
         // R-R intervals (uint16 LE, units of 1/1024 s) when bit 4 is set
+        var rrs: [Double] = []
         if flags & 0x10 != 0 {
-            var rrs: [Double] = []
             while idx + 1 < bytes.count {
                 let raw = Int(bytes[idx]) | (Int(bytes[idx + 1]) << 8)
                 rrs.append(Double(raw) / 1024.0 * 1000.0)   // → milliseconds
@@ -552,6 +558,22 @@ extension HeartRateManager: CBPeripheralDelegate {
             }
             if !rrs.isEmpty { let out = rrs; DispatchQueue.main.async { self.onRR?(out) } }
         }
-        handle(bpm: value)
+        var bpmValue = value
+        if bpmValue == 0 {
+            // Some straps report HR 0 while still sending beat timing — derive BPM from it.
+            let valid = rrs.filter { $0 >= 300 && $0 <= 2000 }
+            if !valid.isEmpty {
+                bpmValue = Int((60000.0 / (valid.reduce(0, +) / Double(valid.count))).rounded())
+            }
+        }
+        if bpmValue == 0 {   // connected, but the strap can't detect a heartbeat at all
+            DispatchQueue.main.async {
+                self.bpm = nil
+                self.onNoReading?()
+                self.statusText = "Strap isn't detecting your heartbeat — wet the contacts, tighten it, or replace the battery"
+            }
+            return
+        }
+        handle(bpm: bpmValue)
     }
 }

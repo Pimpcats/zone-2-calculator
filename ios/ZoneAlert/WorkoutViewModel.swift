@@ -221,6 +221,7 @@ final class WorkoutViewModel: ObservableObject {
 
     init() {
         hrm.onReading = { [weak self] bpm in self?.ingest(bpm: bpm) }
+        hrm.onNoReading = { [weak self] in self?.bpm = nil }
         hrm.onRR = { [weak self] rrs in self?.handleRR(rrs) }
         hrm.onDisconnect = { [weak self] in self?.scheduleAutoSave(); self?.syncLiveActivity() }
         hrm.onReconnect = { [weak self] in self?.cancelAutoSave(); self?.syncLiveActivity() }
