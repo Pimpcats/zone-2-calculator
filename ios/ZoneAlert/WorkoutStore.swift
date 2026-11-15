@@ -17,6 +17,13 @@ struct WorkoutRecord: Codable, Identifiable {
     var treadmillCalories: Double? = nil         // gross, from speed + grade + weight
     var treadmillActiveCalories: Double? = nil
     var hrTrackedSeconds: Double? = nil          // workout time that had heart-rate data
+    var hrInterpolatedSeconds: Double? = nil     // part of that filled in across short gaps
+
+    /// Active calories: the stored figure when recorded live, otherwise gross minus an
+    /// estimated resting share for the workout's duration.
+    func activeEstimate(restPerMin: Double) -> Double {
+        activeCalories ?? Energy.activeKcal(gross: calories, restPerMin: restPerMin, seconds: duration)
+    }
 }
 
 /// A single physiology measurement (resting HR or OwnZone aerobic threshold) over time.
@@ -81,11 +88,11 @@ final class WorkoutStore: ObservableObject {
         }
     }
 
-    /// Average workout active calories per day over the last `days` days.
-    func avgDailyActiveCalories(overLast days: Double, restPerMin: Double) -> Double {
+    /// Average workout active calories per day between two dates.
+    func avgDailyActiveCalories(from start: Date, to end: Date, restPerMin: Double) -> Double {
+        let days = end.timeIntervalSince(start) / 86400
         guard days > 0 else { return 0 }
-        let cutoff = Date().addingTimeInterval(-days * 86400)
-        let total = records.filter { $0.date >= cutoff }
+        let total = records.filter { $0.date >= start && $0.date <= end }
             .reduce(0.0) { $0 + $1.activeEstimate(restPerMin: restPerMin) }
         return total / days
     }
@@ -113,8 +120,12 @@ final class WorkoutStore: ObservableObject {
         }
     }
 
+    /// Add a workout. Saving the same session again (e.g. Finish after an auto-save)
+    /// replaces the earlier copy instead of creating a duplicate.
     func add(_ r: WorkoutRecord) {
+        records.removeAll { $0.id == r.id }
         records.insert(r, at: 0)
+        records.sort { $0.date > $1.date }
         save()
     }
 

@@ -1,0 +1,65 @@
+name: Validate iOS app (tests + build, no publish)
+
+# Compiles the app and runs the calculation unit tests on branches and pull requests.
+# Unlike ios-build.yml this never publishes a release and never pushes to main.
+
+on:
+  push:
+    branches-ignore: [main]
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios-validate.yml'
+  pull_request:
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios-validate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    name: Calculation unit tests
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run unit tests
+        working-directory: ios/EnergyMath
+        run: swift test
+
+  build:
+    name: Build app (unsigned)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show Xcode version
+        run: xcodebuild -version
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+      - name: Build unsigned app
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project ZoneAlert.xcodeproj \
+            -scheme ZoneAlert \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            clean build 2>&1 | tee build.log | grep -E "error:|warning: unre|BUILD|\*\*" || true
+          grep -q "BUILD SUCCEEDED" build.log
+      - name: Show errors
+        if: failure()
+        working-directory: ios
+        run: grep -n -B2 -A6 "error:" build.log | head -300 || tail -100 build.log

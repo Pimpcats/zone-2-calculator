@@ -12,6 +12,7 @@ targets:
     sources:
       - path: ZoneAlert
       - path: Shared
+      - path: EnergyMath/Sources/EnergyMath   # calculation code, unit-tested via EnergyMath/Package.swift
     dependencies:
       - target: ZoneAlertWidget
         embed: true

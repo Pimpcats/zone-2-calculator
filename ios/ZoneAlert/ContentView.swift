@@ -42,6 +42,7 @@ struct ContentView: View {
     @AppStorage("gpsEnabled") private var gpsEnabled: Bool = false
     @AppStorage("treadmillMph") private var treadmillMph: Double = 3.0
     @AppStorage("treadmillGrade") private var treadmillGrade: Double = 0
+    @AppStorage("treadmillJogging") private var treadmillJogging: Bool = false
     @AppStorage("heightIn") private var heightIn: Int = 68
     @AppStorage("workoutGoalMin") private var workoutGoalMin: Int = 30
 
@@ -90,6 +91,7 @@ struct ContentView: View {
         .onChange(of: gpsEnabled) { _ in applySettings() }
         .onChange(of: treadmillMph) { _ in applySettings() }
         .onChange(of: treadmillGrade) { _ in applySettings() }
+        .onChange(of: treadmillJogging) { _ in applySettings() }
         .onChange(of: heightIn) { _ in applySettings() }
         .onChange(of: workoutGoalMin) { _ in applySettings() }
         .onChange(of: liveBanner) { _ in applySettings() }
@@ -102,14 +104,15 @@ struct ContentView: View {
         let override = (useMeasuredMax && measuredMax > 0) ? measuredMax : nil
         let mFloor = customBand ? floorBpmManual : nil
         let mCeil = customBand ? ceilingBpmManual : nil
-        vm.apply(age: age, isMale: isMale, weightKg: weightLbs * 0.453592, restingHR: restingHR,
+        vm.apply(age: age, isMale: isMale, weightKg: max(0, weightLbs) * Energy.kgPerLb, restingHR: restingHR,
                  bandZone: bandZone, mhrOverride: override, manualFloor: mFloor, manualCeiling: mCeil,
                  useHRR: useHRR, adaptiveHRV: adaptiveHRV)
         vm.exerciseType = ExerciseType(rawValue: exerciseType) ?? .treadmill
         vm.gpsEnabled = gpsEnabled
         vm.treadmillMph = max(0.1, treadmillMph)
         vm.treadmillGradePct = max(0, treadmillGrade)
-        vm.heightCm = Double(heightIn) * 2.54
+        vm.treadmillJogging = treadmillJogging
+        vm.heightCm = Double(max(0, heightIn)) * Energy.cmPerInch
         vm.hrm.voiceEnabled = voiceEnabled
         vm.hrm.voiceIdentifier = voiceId
         vm.workoutGoalSec = workoutGoalMin * 60
@@ -139,6 +142,7 @@ struct WorkoutView: View {
     @AppStorage("gpsEnabled") private var gpsEnabled = false
     @AppStorage("treadmillMph") private var treadmillMph: Double = 3.0
     @AppStorage("treadmillGrade") private var treadmillGrade: Double = 0
+    @AppStorage("treadmillJogging") private var treadmillJogging = false
     @AppStorage("workoutGoalMin") private var workoutGoalMin = 30
 
     private var tooLow: Bool { vm.connected && vm.active && (vm.bpm ?? 999) < vm.floorBpm }
@@ -239,6 +243,10 @@ struct WorkoutView: View {
                                 .font(.callout.bold().monospacedDigit()).foregroundColor(.orange)
                         }
                     }
+                    if treadmillMph >= Energy.jogMinMph && treadmillMph < Energy.runMinMph {
+                        Toggle("Jogging (not walking) at this speed", isOn: $treadmillJogging)
+                            .font(.subheadline).tint(.orange)
+                    }
                 }
                 Text(type == .treadmill
                      ? "Distance & pace come from this speed. Speed and incline also drive a second calorie estimate to compare with the heart-rate one — keep them matched to the treadmill."
@@ -305,8 +313,9 @@ struct WorkoutView: View {
                 Button {
                     let record = vm.makeRecord()
                     store.add(record)
+                    // One route only — both on would log the workout to Health twice.
                     if healthEnabled { vm.health.save(record) }
-                    if healthShortcutEnabled { HealthShortcut.send(record) }
+                    else if healthShortcutEnabled { HealthShortcut.send(record) }
                     vm.reset()
                     withAnimation { savedFlash = true }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
@@ -1209,6 +1218,12 @@ struct SettingsView: View {
                             }
                         }
                     Toggle("Send to Apple Health on Finish (via Shortcut)", isOn: $healthShortcutEnabled)
+                    if healthEnabled && healthShortcutEnabled {
+                        Text("Both are on — only the direct save is used, so the workout isn't logged twice.")
+                            .font(.caption2).foregroundColor(.orange)
+                    }
+                    Text("Health receives the active-calorie estimate (resting calories removed), not the gross figure.")
+                        .font(.caption2).foregroundColor(.secondary)
                     if healthShortcutEnabled {
                         DisclosureGroup("One-time Shortcut setup") {
                             Text("""
@@ -1524,6 +1539,7 @@ struct EditWorkoutSheet: View {
         r.treadmillCalories = record.treadmillCalories.map { $0 * timeScale }
         r.treadmillActiveCalories = record.treadmillActiveCalories.map { $0 * timeScale }
         r.hrTrackedSeconds = record.hrTrackedSeconds.map { $0 * timeScale }
+        r.hrInterpolatedSeconds = record.hrInterpolatedSeconds.map { $0 * timeScale }
         r.avgBpm = Int(Double(avgBpm) ?? 0)
         r.peakBpm = Int(Double(peakBpm) ?? 0)
         r.timeInZone = timeInZone

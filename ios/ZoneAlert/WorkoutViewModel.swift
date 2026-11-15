@@ -25,6 +25,12 @@ enum ExerciseType: String, CaseIterable, Identifiable {
         case .elliptical, .rowing, .other: return .none
         }
     }
+    var isIndoor: Bool {
+        switch self {
+        case .treadmill, .indoorBike, .elliptical, .rowing: return true
+        case .outdoorRun, .outdoorWalk, .outdoorBike, .other: return false
+        }
+    }
     var icon: String {
         switch self {
         case .treadmill, .outdoorRun: return "figure.run"
@@ -100,7 +106,8 @@ final class WorkoutViewModel: ObservableObject {
         didSet { if exerciseType.distanceSource == .speed { lastIndoorDuration = duration } }
     }
     var treadmillMph: Double = 3.0
-    var treadmillGradePct: Double = 0            // incline, percent
+    var treadmillGradePct: Double = 0            // incline, percent grade (3.5 = 3.5 %)
+    var treadmillJogging = false                 // jogging rather than walking at 3–5 mph
     var heightCm: Double = 173                   // for the resting-expenditure estimate
     var gpsEnabled = false                       // outdoor distance via GPS; off by default
     private var indoorDistMiles = 0.0
@@ -206,20 +213,14 @@ final class WorkoutViewModel: ObservableObject {
     private var timer: Timer?
     private var startDate: Date?
     private var accumulated: TimeInterval = 0
-    private var lastHRDate: Date?
-    private var lastHRValue: Int?
-    private var hrWeighted = 0.0                 // Σ bpm × seconds
-    private var hrTracked = 0.0                  // seconds of workout that had heart-rate data
-    private var treadmillSeconds = 0.0
-
-    /// Longest gap between readings that is still bridged. Straps normally notify about
-    /// once a second; anything longer than this is treated as a dropout, not exercise data.
-    private let maxHRGap = 30.0
+    private var hr = HRAccumulator()             // time-weighted heart-rate totals
+    private var treadmill = TreadmillAccumulator()
+    private var sessionRecordID = UUID()         // one id per session, so re-saving replaces
     private var sessionSaved = false
     private var disconnectWork: DispatchWorkItem?
 
     /// Time-weighted average, so bursts or sparse stretches of readings don't skew it.
-    var avgBpm: Int { hrTracked > 0 ? Int((hrWeighted / hrTracked).rounded()) : 0 }
+    var avgBpm: Int { Int(hr.averageBpm.rounded()) }
 
     // MARK: - Energy estimates (all approximate)
 
@@ -230,24 +231,31 @@ final class WorkoutViewModel: ObservableObject {
         Energy.restingKcalPerMin(weightKg: weightKg, heightCm: heightCm, age: age, isMale: isMale)
     }
     /// Heart-rate estimate minus what you'd have burned at rest over the same tracked time.
-    var activeCalories: Double { max(0, calories - restingKcalPerMin * hrTracked / 60) }
-    var treadmillActiveCalories: Double {
-        max(0, treadmillCalories - restingKcalPerMin * treadmillSeconds / 60)
+    var activeCalories: Double {
+        Energy.activeKcal(gross: calories, restPerMin: restingKcalPerMin, seconds: hr.trackedSeconds)
     }
-    var hasTreadmillEstimate: Bool { treadmillSeconds > 0 }
-    /// Workout time with no heart-rate reading behind it (strap dropouts, late connect).
-    var hrGapSeconds: Double { max(0, duration - hrTracked) }
-    var hrCoverage: Double { duration > 0 ? min(1, hrTracked / duration) : 1 }
+    var treadmillActiveCalories: Double {
+        Energy.activeKcal(gross: treadmillCalories, restPerMin: restingKcalPerMin, seconds: treadmill.seconds)
+    }
+    var hasTreadmillEstimate: Bool { treadmill.seconds > 0 }
+    /// Shares of the workout with real readings, with short gaps filled in, and with no
+    /// heart-rate data at all (dropouts, strap connected late).
+    var hrCoverage: (measured: Double, interpolated: Double, missing: Double) {
+        hr.coverage(duration: duration)
+    }
+    var hrInterpolatedSeconds: Double { hr.interpolatedSeconds }
+    var hrMissingSeconds: Double { max(0, duration - hr.trackedSeconds) }
 
     /// Snapshot of the current session for saving to history.
     func makeRecord() -> WorkoutRecord {
-        WorkoutRecord(date: Date(), duration: duration, distanceMiles: distanceMiles,
+        WorkoutRecord(id: sessionRecordID, date: Date(), duration: duration, distanceMiles: distanceMiles,
                       calories: calories, avgBpm: avgBpm, peakBpm: peakBpm, timeInZone: timeInZone,
                       exerciseType: exerciseType.rawValue,
                       activeCalories: activeCalories,
                       treadmillCalories: hasTreadmillEstimate ? treadmillCalories : nil,
                       treadmillActiveCalories: hasTreadmillEstimate ? treadmillActiveCalories : nil,
-                      hrTrackedSeconds: hrTracked)
+                      hrTrackedSeconds: hr.trackedSeconds,
+                      hrInterpolatedSeconds: hr.interpolatedSeconds)
     }
 
     init() {
@@ -383,8 +391,7 @@ final class WorkoutViewModel: ObservableObject {
         if duration == 0 { goalReached = false }   // fresh start resets the goal alert
         sessionSaved = false
         startDate = Date().addingTimeInterval(-accumulated)
-        lastHRDate = Date()
-        lastHRValue = nil
+        hr.begin(at: Date().timeIntervalSinceReferenceDate)
         lastIndoorDuration = duration
         if effectiveDistanceSource == .gps { loc.start() }   // only when outdoor + GPS toggle on
         startTimer()
@@ -397,8 +404,7 @@ final class WorkoutViewModel: ObservableObject {
         accumulated = duration
         loc.pause()
         timer?.invalidate()
-        lastHRDate = nil
-        lastHRValue = nil
+        hr.pause()
         syncLiveActivity()
     }
 
@@ -414,15 +420,13 @@ final class WorkoutViewModel: ObservableObject {
         timeInZone = Array(repeating: 0, count: 6)
         hrHistory = []
         peakBpm = 0
-        hrWeighted = 0
-        hrTracked = 0
+        hr = HRAccumulator()
+        treadmill = TreadmillAccumulator()
         treadmillCalories = 0
-        treadmillSeconds = 0
+        sessionRecordID = UUID()
         sessionSaved = false
         cancelAutoSave()
         startDate = nil
-        lastHRDate = nil
-        lastHRValue = nil
         loc.reset()
         timer?.invalidate()
         syncLiveActivity()
@@ -854,37 +858,15 @@ final class WorkoutViewModel: ObservableObject {
             liveActivity.start(bpm: value, zone: z, floor: floorBpm, ceiling: ceilingBpm, status: liveStatus(value))
         }
         guard active else { return }
-        // Credit the real time since the previous reading (or since Start/Resume), using
-        // the mean of the two readings. Notifications that arrive in a burst each get
-        // their true sliver of time; a gap longer than `maxHRGap` is a dropout and is
-        // credited nothing — it shows up as heart-rate coverage below 100% instead.
-        let now = Date()
-        var dt = 0.0
-        var effective = Double(value)
-        if let last = lastHRDate {
-            let delta = now.timeIntervalSince(last)
-            if delta > 0 && delta <= maxHRGap {
-                dt = delta
-                if let prev = lastHRValue { effective = (Double(prev) + Double(value)) / 2 }
-            }
+        // Credit the real time since the previous reading — see HRAccumulator for how
+        // bursts, short gaps and dropouts are handled. A dropout is credited nothing.
+        if let credit = hr.add(bpm: value, at: Date().timeIntervalSinceReferenceDate) {
+            timeInZone[z] += credit.seconds
+            calories += Energy.keytelKcalPerMin(bpm: credit.bpm, weightKg: weightKg,
+                                                age: age, isMale: isMale) * credit.seconds / 60.0
         }
-        lastHRDate = now
-        lastHRValue = value
-        timeInZone[z] += dt
-        hrWeighted += effective * dt
-        hrTracked += dt
-        addCalories(bpm: effective, dt: dt)
         hrHistory.append(value)
         if hrHistory.count > 14400 { hrHistory.removeFirst() }   // ~4h at 1 Hz
-    }
-
-    /// HR-based calorie estimate (Keytel et al., 2005).
-    private func addCalories(bpm: Double, dt: Double) {
-        let hr = bpm, a = Double(age), w = weightKg
-        let perMin: Double = isMale
-            ? (-55.0969 + 0.6309 * hr + 0.1988 * w + 0.2017 * a) / 4.184
-            : (-20.4022 + 0.4472 * hr - 0.1263 * w + 0.0740 * a) / 4.184
-        if perMin > 0 { calories += perMin * dt / 60.0 }
     }
 
     private func startTimer() {
@@ -902,9 +884,9 @@ final class WorkoutViewModel: ObservableObject {
             if d > 0 {
                 indoorDistMiles += treadmillMph * d / 3600.0   // integrate speed × time
                 if exerciseType == .treadmill {
-                    treadmillCalories += Energy.treadmillKcalPerMin(
-                        mph: treadmillMph, gradePct: treadmillGradePct, weightKg: weightKg) * d / 60.0
-                    treadmillSeconds += d
+                    treadmill.add(seconds: d, mph: treadmillMph, gradePct: treadmillGradePct,
+                                  jogging: treadmillJogging, weightKg: weightKg)
+                    treadmillCalories = treadmill.grossKcal
                 }
             }
             lastIndoorDuration = duration
