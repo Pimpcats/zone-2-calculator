@@ -319,6 +319,13 @@ struct WorkoutView: View {
         vm.currentZone >= 1 ? Zones.all[vm.currentZone - 1].color : Color(white: 0.6)
     }
 
+    /// Color of the zone the workout's running average HR falls in.
+    private var avgTint: Color {
+        guard vm.avgBpm > 0 else { return .white }
+        let z = min(Zones.zone(forBpm: vm.avgBpm, mhr: vm.mhr), 5)
+        return z >= 1 ? Zones.all[z - 1].color : Color(white: 0.6)
+    }
+
     /// A badge at the top showing the current zone in its real color.
     private var zoneIndicator: some View {
         let z = vm.currentZone
@@ -362,8 +369,13 @@ struct WorkoutView: View {
                            value: vm.bpm.map(String.init) ?? "--", unit: "bpm",
                            valueColor: zoneTint)
             }
-            MetricCell(icon: "timer", title: "Duration",
-                       value: WorkoutViewModel.clock(vm.duration), unit: "")
+            HStack(spacing: 14) {
+                MetricCell(icon: "timer", title: "Duration",
+                           value: WorkoutViewModel.clock(vm.duration), unit: "")
+                MetricCell(icon: "waveform.path.ecg", title: "Avg HR",
+                           value: vm.avgBpm > 0 ? "\(vm.avgBpm)" : "--", unit: "bpm",
+                           valueColor: avgTint)
+            }
         }
     }
 
