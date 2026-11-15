@@ -84,7 +84,7 @@ struct DayReviewView: View {
             } else {
                 HStack(spacing: 12) {
                     metric("Distance", String(format: "%.2f", t.miles), "mi", .red)
-                    metric("Calories", "\(Int(t.calories))", "kcal", .red)
+                    metric("Calories (est.)", "~\(Int(t.calories))", "kcal", .red)
                 }
                 HStack(spacing: 12) {
                     metric("Pace", WorkoutViewModel.pace(pace), "min/mi", .red)

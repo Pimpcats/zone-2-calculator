@@ -12,6 +12,7 @@ enum HealthShortcut {
     static func send(_ r: WorkoutRecord) {
         let payload: [String: Any] = [
             "kcal": Int(r.calories),
+            "activekcal": Int(r.activeCalories ?? r.calories),
             "miles": (r.distanceMiles * 100).rounded() / 100,
             "minutes": max(1, Int((r.duration / 60).rounded())),
             "avgbpm": r.avgBpm,

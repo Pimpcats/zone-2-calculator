@@ -41,6 +41,8 @@ struct ContentView: View {
     @AppStorage("exerciseType") private var exerciseType: String = ExerciseType.treadmill.rawValue
     @AppStorage("gpsEnabled") private var gpsEnabled: Bool = false
     @AppStorage("treadmillMph") private var treadmillMph: Double = 3.0
+    @AppStorage("treadmillGrade") private var treadmillGrade: Double = 0
+    @AppStorage("heightIn") private var heightIn: Int = 68
     @AppStorage("workoutGoalMin") private var workoutGoalMin: Int = 30
 
     var body: some View {
@@ -87,6 +89,8 @@ struct ContentView: View {
         .onChange(of: exerciseType) { _ in applySettings() }
         .onChange(of: gpsEnabled) { _ in applySettings() }
         .onChange(of: treadmillMph) { _ in applySettings() }
+        .onChange(of: treadmillGrade) { _ in applySettings() }
+        .onChange(of: heightIn) { _ in applySettings() }
         .onChange(of: workoutGoalMin) { _ in applySettings() }
         .onChange(of: liveBanner) { _ in applySettings() }
         .onChange(of: zoneAlerts) { _ in applySettings() }
@@ -104,6 +108,8 @@ struct ContentView: View {
         vm.exerciseType = ExerciseType(rawValue: exerciseType) ?? .treadmill
         vm.gpsEnabled = gpsEnabled
         vm.treadmillMph = max(0.1, treadmillMph)
+        vm.treadmillGradePct = max(0, treadmillGrade)
+        vm.heightCm = Double(heightIn) * 2.54
         vm.hrm.voiceEnabled = voiceEnabled
         vm.hrm.voiceIdentifier = voiceId
         vm.workoutGoalSec = workoutGoalMin * 60
@@ -132,6 +138,7 @@ struct WorkoutView: View {
     @AppStorage("exerciseType") private var exerciseType = ExerciseType.treadmill.rawValue
     @AppStorage("gpsEnabled") private var gpsEnabled = false
     @AppStorage("treadmillMph") private var treadmillMph: Double = 3.0
+    @AppStorage("treadmillGrade") private var treadmillGrade: Double = 0
     @AppStorage("workoutGoalMin") private var workoutGoalMin = 30
 
     private var tooLow: Bool { vm.connected && vm.active && (vm.bpm ?? 999) < vm.floorBpm }
@@ -151,6 +158,7 @@ struct WorkoutView: View {
                     VStack(spacing: 18) {
                         zoneIndicator
                         metricsGrid
+                        EnergyCompareCard(vm: vm)
                         pager
                         goalCard
                         bandBar
@@ -222,7 +230,19 @@ struct WorkoutView: View {
                             .font(.callout.bold().monospacedDigit()).foregroundColor(.orange)
                     }
                 }
-                Text("Distance & pace come from this speed. Calories stay heart-rate based.")
+                if type == .treadmill {
+                    Stepper(value: $treadmillGrade, in: 0...20, step: 0.5) {
+                        HStack {
+                            Text("Incline")
+                            Spacer()
+                            Text(String(format: "%.1f%%", treadmillGrade))
+                                .font(.callout.bold().monospacedDigit()).foregroundColor(.orange)
+                        }
+                    }
+                }
+                Text(type == .treadmill
+                     ? "Distance & pace come from this speed. Speed and incline also drive a second calorie estimate to compare with the heart-rate one — keep them matched to the treadmill."
+                     : "Distance & pace come from this speed. Calories stay heart-rate based.")
                     .font(.caption2).foregroundColor(.secondary)
             case .gps:
                 Toggle(isOn: $gpsEnabled) {
@@ -359,8 +379,8 @@ struct WorkoutView: View {
             HStack(spacing: 14) {
                 MetricCell(icon: "ruler", title: "Distance",
                            value: String(format: "%.2f", vm.distanceMiles), unit: "mi")
-                MetricCell(icon: "flame.fill", title: "Calories",
-                           value: "\(Int(vm.calories))", unit: "kcal")
+                MetricCell(icon: "flame.fill", title: "Calories (est.)",
+                           value: "~\(Int(vm.calories))", unit: "kcal")
             }
             HStack(spacing: 14) {
                 MetricCell(icon: "speedometer", title: "Pace",
@@ -939,6 +959,7 @@ struct SettingsView: View {
     @ObservedObject var vm: WorkoutViewModel
     @ObservedObject var hrm: HeartRateManager
     @ObservedObject var store: WorkoutStore
+    @AppStorage("heightIn") private var heightIn = 68
     @Binding var age: Int
     @Binding var isMale: Bool
     @Binding var weightLbs: Double
@@ -1066,6 +1087,7 @@ struct SettingsView: View {
                             .frame(width: 72)
                         Text("lbs").foregroundColor(.secondary)
                     }
+                    intRow("Height", value: $heightIn, unit: "in")
                     intRow("Resting HR", value: $restingHR, unit: "bpm")
                 }
 
@@ -1495,6 +1517,13 @@ struct EditWorkoutSheet: View {
         r.duration = TimeInterval(minutes * 60)
         r.distanceMiles = Double(distance) ?? 0
         r.calories = Double(calories) ?? 0
+        // Keep the derived estimates in step with any hand edits to calories or duration.
+        let kcalScale = record.calories > 0 ? r.calories / record.calories : 1
+        let timeScale = record.duration > 0 ? r.duration / record.duration : 1
+        r.activeCalories = record.activeCalories.map { $0 * kcalScale }
+        r.treadmillCalories = record.treadmillCalories.map { $0 * timeScale }
+        r.treadmillActiveCalories = record.treadmillActiveCalories.map { $0 * timeScale }
+        r.hrTrackedSeconds = record.hrTrackedSeconds.map { $0 * timeScale }
         r.avgBpm = Int(Double(avgBpm) ?? 0)
         r.peakBpm = Int(Double(peakBpm) ?? 0)
         r.timeInZone = timeInZone
@@ -1531,6 +1560,8 @@ struct ProgressTabView: View {
                     }
 
                     weeklyChart
+
+                    EnergyCheckCard(store: store)
 
                     if !store.series("resting").isEmpty || !store.series("ownzone").isEmpty || !store.series("recovery").isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
@@ -1579,7 +1610,7 @@ struct ProgressTabView: View {
             row("Workouts", "\(t.count)")
             row("Time", WorkoutViewModel.clock(t.duration))
             row("Distance", String(format: "%.2f mi", t.miles))
-            row("Calories", "\(Int(t.calories)) kcal")
+            row("Calories (est.)", "~\(Int(t.calories)) kcal")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
@@ -1727,7 +1758,15 @@ struct RecentWorkoutRow: View {
                     .font(.caption).foregroundColor(.secondary)
             }
             Spacer()
-            Text("\(Int(record.calories)) kcal").font(.caption.bold())
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("~\(Int(record.calories)) kcal est.").font(.caption.bold())
+                if let a = record.activeCalories {
+                    Text("~\(Int(a)) active").font(.caption2).foregroundColor(.secondary)
+                }
+                if let t = record.treadmillCalories {
+                    Text("~\(Int(t)) by speed & grade").font(.caption2).foregroundColor(.secondary)
+                }
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -195,10 +195,10 @@ struct RawNumbersView: View {
             Text("Raw Numbers").font(.system(size: 20, weight: .bold))
 
             sectionTitle("All workouts (\(store.records.count))")
-            lines(["date,type,duration_s,miles,kcal,avg_bpm,peak_bpm,z1_s,z2_s,z3_s,z4_s,z5_s"] +
+            lines(["date,type,duration_s,miles,kcal_est_gross,kcal_est_active,kcal_est_treadmill,avg_bpm,peak_bpm,z1_s,z2_s,z3_s,z4_s,z5_s"] +
                   store.records.map { r in
                     let tz = (1...5).map { String(format: "%.0f", $0 < r.timeInZone.count ? r.timeInZone[$0] : 0) }.joined(separator: ",")
-                    return "\(r.date.formatted(date: .numeric, time: .shortened)),\(r.exerciseType ?? "—"),\(Int(r.duration)),\(String(format: "%.2f", r.distanceMiles)),\(Int(r.calories)),\(r.avgBpm),\(r.peakBpm),\(tz)"
+                    return "\(r.date.formatted(date: .numeric, time: .shortened)),\(r.exerciseType ?? "—"),\(Int(r.duration)),\(String(format: "%.2f", r.distanceMiles)),\(Int(r.calories)),\(r.activeCalories.map { "\(Int($0))" } ?? ""),\(r.treadmillCalories.map { "\(Int($0))" } ?? ""),\(r.avgBpm),\(r.peakBpm),\(tz)"
                   })
 
             sectionTitle("All measurements (\(store.measurements.count))")
@@ -236,7 +236,7 @@ enum ZoneExport {
         if renderPDF(pages: pages, to: pdfURL) { urls.append(pdfURL) }
 
         // Machine-readable backup — the file "Import all data" restores from.
-        let backup = BackupFile(records: store.records, measurements: store.measurements)
+        let backup = BackupFile(records: store.records, measurements: store.measurements, weights: store.weights)
         let backupURL = docs.appendingPathComponent("ZoneAlert-Backup.json")
         if let data = try? JSONEncoder().encode(backup) {
             try? data.write(to: backupURL)

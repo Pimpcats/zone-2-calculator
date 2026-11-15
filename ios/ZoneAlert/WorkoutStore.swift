@@ -11,6 +11,12 @@ struct WorkoutRecord: Codable, Identifiable {
     var peakBpm: Int
     var timeInZone: [Double]   // index 1...5
     var exerciseType: String? = nil
+    // Added later — all optional so older saved workouts and backups still decode.
+    // `calories` above is the gross heart-rate (Keytel) estimate.
+    var activeCalories: Double? = nil            // heart-rate estimate minus resting share
+    var treadmillCalories: Double? = nil         // gross, from speed + grade + weight
+    var treadmillActiveCalories: Double? = nil
+    var hrTrackedSeconds: Double? = nil          // workout time that had heart-rate data
 }
 
 /// A single physiology measurement (resting HR or OwnZone aerobic threshold) over time.
@@ -27,6 +33,7 @@ struct BackupFile: Codable {
     var version = 1
     var records: [WorkoutRecord]
     var measurements: [Measurement]
+    var weights: [WeightEntry]? = nil
 }
 
 /// Aggregated totals over a span of workouts.
@@ -42,9 +49,46 @@ final class WorkoutStore: ObservableObject {
     @Published private(set) var records: [WorkoutRecord] = []
     @Published private(set) var measurements: [Measurement] = []   // newest first
     private let key = "workouts.v1"
+    @Published private(set) var weights: [WeightEntry] = []        // newest first
     private let mKey = "measurements.v1"
+    private let wKey = "weights.v1"
 
-    init() { load(); loadMeasurements() }
+    init() { load(); loadMeasurements(); loadWeights() }
+
+    // MARK: - Body-weight log
+
+    func addWeight(lbs: Double, date: Date = Date()) {
+        weights.insert(WeightEntry(date: date, lbs: lbs), at: 0)
+        weights.sort { $0.date > $1.date }
+        saveWeights()
+    }
+
+    func deleteWeight(_ w: WeightEntry) {
+        weights.removeAll { $0.id == w.id }
+        saveWeights()
+    }
+
+    private func loadWeights() {
+        if let data = UserDefaults.standard.data(forKey: wKey),
+           let arr = try? JSONDecoder().decode([WeightEntry].self, from: data) {
+            weights = arr
+        }
+    }
+
+    private func saveWeights() {
+        if let data = try? JSONEncoder().encode(weights) {
+            UserDefaults.standard.set(data, forKey: wKey)
+        }
+    }
+
+    /// Average workout active calories per day over the last `days` days.
+    func avgDailyActiveCalories(overLast days: Double, restPerMin: Double) -> Double {
+        guard days > 0 else { return 0 }
+        let cutoff = Date().addingTimeInterval(-days * 86400)
+        let total = records.filter { $0.date >= cutoff }
+            .reduce(0.0) { $0 + $1.activeEstimate(restPerMin: restPerMin) }
+        return total / days
+    }
 
     // MARK: - Measurements (resting HR / OwnZone threshold trends)
 
@@ -90,6 +134,10 @@ final class WorkoutStore: ObservableObject {
         if let data = try? JSONEncoder().encode(measurements) {
             UserDefaults.standard.set(data, forKey: mKey)
         }
+        let haveW = Set(weights.map { $0.id })
+        weights.append(contentsOf: (backup.weights ?? []).filter { !haveW.contains($0.id) })
+        weights.sort { $0.date > $1.date }
+        saveWeights()
         return (newR.count, newM.count)
     }
 

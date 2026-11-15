@@ -12,7 +12,10 @@ rate falls out of zone.
 A Polar-style live dashboard shows:
 - **Heart rate**, **live HR-zone graph**, and **time-in-zone** breakdown — from the strap.
 - **Distance** and **Pace** — from the iPhone's GPS (a chest strap has no GPS).
-- **Calories** — HR-based estimate (uses age/sex/weight from Settings).
+- **Calories (estimates)** — gross figure from heart rate (Keytel 2005, uses age/sex/weight),
+  an active figure with estimated resting expenditure (Mifflin–St Jeor, needs height) subtracted,
+  and on the treadmill a second estimate from speed, incline, weight and time (ACSM equations)
+  shown side by side. The Progress tab checks the estimates against your logged weight trend.
 - **Duration** — workout timer with Start/Pause/Reset.
 
 Set your age, sex, weight and target zone in **Settings (gear icon)**.

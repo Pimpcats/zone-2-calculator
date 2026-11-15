@@ -28,7 +28,7 @@ final class HealthStore {
 
     func save(_ record: WorkoutRecord) {
         guard available else { return }
-        let energy = HKQuantity(unit: .kilocalorie(), doubleValue: max(0, record.calories))
+        let energy = HKQuantity(unit: .kilocalorie(), doubleValue: max(0, record.activeCalories ?? record.calories))
         let distance = HKQuantity(unit: .mile(), doubleValue: max(0, record.distanceMiles))
         let end = record.date
         let start = end.addingTimeInterval(-record.duration)
